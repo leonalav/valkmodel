@@ -4,6 +4,7 @@ import argparse
 import inspect
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,8 @@ from ..modeling_valkmodel import ValkModelForCausalLM
 from .trainer import TrainingArguments, ValkTrainer
 
 
-CONFIG_ROOT = Path(__file__).resolve().parents[3] / "configs"
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+CONFIG_ROOT = PROJECT_ROOT / "configs"
 TRAINING_PRESETS = {
     "130m_probe": {
         "training": CONFIG_ROOT / "training_130m_probe.yaml",
@@ -64,6 +66,12 @@ class TokenListDataset(Dataset):
             "labels": torch.tensor(labels, dtype=torch.long),
             "attention_mask": (input_ids != pad_token_id).long(),
         }
+
+
+def ensure_project_data_import_path() -> None:
+    root = str(PROJECT_ROOT)
+    if root not in sys.path:
+        sys.path.insert(0, root)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -145,6 +153,7 @@ def load_training_config(path: str | Path, model_config_path: str | Path | None 
 
 
 def load_tokenizer_from_config(path: str | Path):
+    ensure_project_data_import_path()
     from data.tokenizer_setup import load_tokenizer
 
     payload = load_yaml_config(path)
@@ -153,6 +162,7 @@ def load_tokenizer_from_config(path: str | Path):
 
 
 def build_dataloader_from_config(path: str | Path, tokenizer: Any, block_size: int, batch_size: int):
+    ensure_project_data_import_path()
     from data.dataloader_builder import build_training_dataloader
 
     return build_training_dataloader(resolve_path(path), tokenizer, block_size=block_size, batch_size=batch_size)

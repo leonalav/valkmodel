@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader, Dataset
 from valkmodel.training.train_cli import (
     build_arg_parser,
     build_trainer_from_args,
+    ensure_project_data_import_path,
     load_token_documents,
     load_training_config,
     resolve_path,
@@ -67,6 +68,16 @@ def install_fake_data_modules(monkeypatch):
     monkeypatch.setitem(sys.modules, "data.tokenizer_setup", tokenizer_setup)
     monkeypatch.setitem(sys.modules, "data.dataloader_builder", dataloader_builder)
     return calls
+
+
+def test_train_cli_adds_project_root_for_top_level_data_package(monkeypatch):
+    src_path = str(resolve_path("src"))
+    root_path = str(resolve_path("."))
+    monkeypatch.setattr(sys, "path", [src_path])
+
+    ensure_project_data_import_path()
+
+    assert sys.path[0] == root_path
 
 
 def test_train_cli_parser_accepts_fallback_token_training_args():
