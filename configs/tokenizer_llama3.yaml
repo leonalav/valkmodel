@@ -1,0 +1,3 @@
+tokenizer_name_or_path: meta-llama/Meta-Llama-3-8B
+trust_remote_code: false
+use_fast: true

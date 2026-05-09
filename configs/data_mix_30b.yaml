@@ -1,0 +1,12 @@
+total_tokens: 30000000000
+mixture:
+  fineweb_edu: 0.35
+  the_stack_v2: 0.22
+  open_web_math: 0.12
+  creative_writing: 0.08
+  culturax_zh: 0.07
+  culturax_en: 0.035
+  culturax_fr: 0.025
+  culturax_ru: 0.025
+  culturax_vi: 0.025
+  scientific_long: 0.05

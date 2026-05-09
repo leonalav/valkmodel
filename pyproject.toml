@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "valkmodel"
+version = "0.1.0"
+description = "Agentic Gated DeltaNet small language model research package"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+]
+
+[project.optional-dependencies]
+fla = [
+    "flash-linear-attention",
+]
+train = [
+    "pyyaml",
+    "transformers",
+    "datasets",
+]
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+valkmodel-train = "valkmodel.training.train_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

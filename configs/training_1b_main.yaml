@@ -1,0 +1,19 @@
+model:
+  hidden_size: 2048
+  num_hidden_layers: 24
+  num_heads: 16
+  head_dim: 128
+  vocab_size: 128256
+  max_position_embeddings: 4096
+  moba_layers: [7, 15, 23]
+  mla_layers: [11, 19]
+training:
+  learning_rate: 0.00015
+  warmup_steps: 1000
+  max_steps: 200000
+  weight_decay: 0.1
+  grad_clip: 1.0
+  balance_loss_weight: 0.01
+  num_experts: 8
+  expert_top_k: 1
+  expert_usage_alert_threshold: 0.02
