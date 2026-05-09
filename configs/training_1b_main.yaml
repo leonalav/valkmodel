@@ -2,18 +2,45 @@ model:
   hidden_size: 2048
   num_hidden_layers: 24
   num_heads: 16
-  head_dim: 128
+  head_dim: 96
+  num_v_heads: 16
+  expand_v: 2.0
+  intermediate_size: 8192
   vocab_size: 128256
-  max_position_embeddings: 4096
-  moba_layers: [7, 15, 23]
-  mla_layers: [11, 19]
+  max_position_embeddings: 272000
+  max_training_seq_len: 4096
+  attn_mode: chunk
+  gdn_backend: auto
+  use_gate: true
+  use_short_conv: true
+  conv_size: 4
+  use_latent_state: true
+  latent_state_dim: 1024
+  latent_state_layers: [11, 23]
+  use_jepa: true
+  jepa_hidden_dim: 1024
+  jepa_loss_weight: 0.1
+  jepa_min_horizon: 1
+  jepa_max_horizon: 16
+  use_latent_branching: true
+  latent_branching_layers: [15, 23]
+  num_branches: 4
+  branch_diversity_weight: 0.01
 training:
   learning_rate: 0.00015
+  min_learning_rate: 0.000015
   warmup_steps: 1000
   max_steps: 200000
   weight_decay: 0.1
   grad_clip: 1.0
-  balance_loss_weight: 0.01
-  num_experts: 8
-  expert_top_k: 1
-  expert_usage_alert_threshold: 0.02
+  batch_size: 1
+  gradient_accumulation_steps: 8
+  eval_steps: 1000
+  save_steps: 5000
+  log_steps: 10
+  jepa_warmup_steps: 10000
+  branch_warmup_steps: 10000
+  jepa_ema_update_every: 1
+  use_curriculum: true
+  curriculum_stages: [2048, 4096, 8192, 16384, 32768]
+  curriculum_steps_per_stage: 10000

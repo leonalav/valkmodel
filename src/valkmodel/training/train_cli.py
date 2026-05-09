@@ -128,15 +128,20 @@ def resolve_training_preset(name: str) -> dict[str, Path]:
 
 def load_training_config(path: str | Path, model_config_path: str | Path | None = None, overrides: dict[str, Any] | None = None) -> tuple[ValkModelConfig, TrainingArguments, dict[str, Any]]:
     payload = load_yaml_config(path)
-    model_payload = dict(payload.get("model", {}))
+    yaml_model_payload = dict(payload.get("model", {}))
+    model_payload = dict(yaml_model_payload)
+    overridden_yaml_model_fields: list[str] = []
     if model_config_path is not None:
         with resolve_path(model_config_path).open("r", encoding="utf-8") as handle:
-            model_payload.update(json.load(handle))
+            json_model_payload = json.load(handle)
+        overridden_yaml_model_fields = sorted(key for key in yaml_model_payload if key in json_model_payload and yaml_model_payload[key] != json_model_payload[key])
+        model_payload.update(json_model_payload)
     if overrides:
         model_payload.update({key: value for key, value in overrides.items() if value is not None})
     config, ignored_model = _build_model_config(model_payload)
     training_args, ignored_training = _build_training_args(payload.get("training", {}))
-    return config, training_args, {"ignored_config_fields": [f"model.{field}" for field in ignored_model] + [f"training.{field}" for field in ignored_training]}
+    ignored_fields = sorted(set(ignored_model + overridden_yaml_model_fields))
+    return config, training_args, {"ignored_config_fields": [f"model.{field}" for field in ignored_fields] + [f"training.{field}" for field in ignored_training]}
 
 
 def load_tokenizer_from_config(path: str | Path):

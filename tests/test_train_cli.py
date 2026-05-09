@@ -188,6 +188,25 @@ training:
     assert "training.balance_loss_weight" in metadata["ignored_config_fields"]
 
 
+def test_run_preset_configs_use_current_valkmodel_fields():
+    legacy_fields = {
+        "moba_layers",
+        "mla_layers",
+        "kda_layers",
+        "num_experts",
+        "expert_top_k",
+        "expert_usage_alert_threshold",
+        "balance_loss_weight",
+    }
+
+    for preset_name in ("130m_probe", "1b_main"):
+        preset = resolve_training_preset(preset_name)
+        config, _, metadata = load_training_config(preset["training"], preset["model"])
+
+        assert config.num_heads * config.head_dim == int(0.75 * config.hidden_size)
+        assert not any(field in metadata["ignored_config_fields"] for field in legacy_fields)
+
+
 def test_train_cli_builds_config_first_trainer_with_existing_data_pipeline(tmp_path, monkeypatch):
     calls = install_fake_data_modules(monkeypatch)
     model_path = tmp_path / "model.json"
