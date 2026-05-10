@@ -15,6 +15,8 @@ from torch.utils.data import Dataset
 
 from ..configuration_valkmodel import ValkModelConfig
 from ..modeling_valkmodel import ValkModelForCausalLM
+from .ddp_launcher import get_rank, is_ddp_environment, relaunch_with_torchrun, should_use_ddp
+from .ddp_trainer import DDPValkTrainer
 from .trainer import TrainingArguments, ValkTrainer
 
 
@@ -226,9 +228,15 @@ def build_trainer_from_args(args: argparse.Namespace) -> ValkTrainer:
 def main(argv: list[str] | None = None) -> dict[str, float]:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+    use_ddp, num_gpus = should_use_ddp(args.device)
+    if use_ddp and not is_ddp_environment():
+        relaunch_with_torchrun(num_gpus)
     trainer = build_trainer_from_args(args)
+    if is_ddp_environment():
+        trainer = DDPValkTrainer.from_trainer(trainer)
     metrics = trainer.train()
-    print(json.dumps(metrics, sort_keys=True))
+    if not is_ddp_environment() or get_rank() == 0:
+        print(json.dumps(metrics, sort_keys=True))
     return metrics
 
 

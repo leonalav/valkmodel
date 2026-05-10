@@ -5,6 +5,7 @@ import types
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+import valkmodel.training.train_cli as train_cli
 from valkmodel.training.train_cli import (
     build_arg_parser,
     build_trainer_from_args,
@@ -272,6 +273,82 @@ def test_train_cli_builds_config_first_trainer_with_existing_data_pipeline(tmp_p
     assert calls["dataloader"]["mixture_config_path"] == data_path.resolve()
     assert calls["dataloader"]["block_size"] == 4
     assert calls["dataloader"]["batch_size"] == 1
+
+
+def test_train_cli_main_relaunches_multi_gpu_runs_under_torchrun(monkeypatch):
+    calls = {}
+
+    monkeypatch.setattr(train_cli, "should_use_ddp", lambda device=None: (True, 4))
+    monkeypatch.setattr(train_cli, "is_ddp_environment", lambda: False)
+    def fake_relaunch(num_gpus):
+        calls["num_gpus"] = num_gpus
+        raise SystemExit(0)
+
+    monkeypatch.setattr(train_cli, "relaunch_with_torchrun", fake_relaunch)
+
+    try:
+        train_cli.main(["--run-preset", "130m_probe", "--output-dir", "out"])
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    assert calls["num_gpus"] == 4
+
+
+def test_train_cli_main_uses_ddp_trainer_inside_torchrun(monkeypatch, tmp_path, capsys):
+    train_path = tmp_path / "train.json"
+    train_path.write_text(json.dumps([[3, 4, 5, 6]]), encoding="utf-8")
+    calls = {}
+
+    class FakeDDPTrainer:
+        @classmethod
+        def from_trainer(cls, trainer):
+            calls["wrapped"] = trainer
+            return cls()
+
+        def train(self):
+            return {"train_loss": 1.25, "global_step": 1}
+
+    monkeypatch.setattr(train_cli, "should_use_ddp", lambda device=None: (True, 2))
+    monkeypatch.setattr(train_cli, "is_ddp_environment", lambda: True)
+    monkeypatch.setattr(train_cli, "get_rank", lambda: 0)
+    monkeypatch.setattr(train_cli, "DDPValkTrainer", FakeDDPTrainer)
+
+    metrics = train_cli.main(
+        [
+            "--preset",
+            "130m",
+            "--train-data",
+            str(train_path),
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--num-steps",
+            "1",
+            "--batch-size",
+            "1",
+            "--seq-len",
+            "4",
+            "--device",
+            "cpu",
+            "--hidden-size",
+            "32",
+            "--num-hidden-layers",
+            "1",
+            "--num-heads",
+            "3",
+            "--head-dim",
+            "8",
+            "--num-v-heads",
+            "3",
+            "--intermediate-size",
+            "64",
+            "--vocab-size",
+            "32",
+        ]
+    )
+
+    assert metrics == {"train_loss": 1.25, "global_step": 1}
+    assert "wrapped" in calls
+    assert '"global_step": 1' in capsys.readouterr().out
 
 
 def test_train_cli_builds_tiny_trainer_from_args(tmp_path):
