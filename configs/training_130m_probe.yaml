@@ -19,28 +19,30 @@ model:
   latent_state_layers: [5, 11]
   use_jepa: true
   jepa_hidden_dim: 384
-  jepa_loss_weight: 0.1
+  jepa_loss_weight: 0.03
   jepa_min_horizon: 1
   jepa_max_horizon: 16
   use_latent_branching: true
   latent_branching_layers: [8]
   num_branches: 4
-  branch_diversity_weight: 0.01
+  branch_value_temperature: 1.5
+  branch_diversity_weight: 0.001
+  branch_entropy_weight: 0.003
 training:
-  learning_rate: 0.0003
-  min_learning_rate: 0.00003
-  warmup_steps: 100
-  max_steps: 2000
+  learning_rate: 0.00022
+  min_learning_rate: 0.000022
+  warmup_steps: 500
+  max_steps: 20000
   weight_decay: 0.1
   grad_clip: 1.0
   batch_size: 1
-  gradient_accumulation_steps: 1
-  eval_steps: 200
-  save_steps: 500
+  gradient_accumulation_steps: 4
+  eval_steps: 500
+  save_steps: 2000
   log_steps: 10
-  jepa_warmup_steps: 200
-  branch_warmup_steps: 200
+  jepa_warmup_steps: 4000
+  branch_warmup_steps: 8000
   jepa_ema_update_every: 1
   use_curriculum: true
-  curriculum_stages: [512, 1024, 2048]
-  curriculum_steps_per_stage: 500
+  curriculum_stages: [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
+  curriculum_steps_per_stage: 2500

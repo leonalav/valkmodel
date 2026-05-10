@@ -43,6 +43,26 @@ def test_latent_branching_eval_top1_selects_highest_value_branch():
     assert torch.allclose(merged_state, torch.tensor([[[2.0, 4.0]]]))
 
 
+def test_latent_branching_higher_temperature_softens_branch_probabilities():
+    low_temperature = LatentBranchingModule(latent_state_dim=2, num_branches=2, value_temperature=0.5)
+    high_temperature = LatentBranchingModule(latent_state_dim=2, num_branches=2, value_temperature=2.0)
+    latent_state = torch.tensor([[[1.0, 0.0]]])
+    for module in (low_temperature, high_temperature):
+        with torch.no_grad():
+            module.branch_projections[0].weight.copy_(torch.eye(2))
+            module.branch_projections[1].weight.copy_(torch.eye(2))
+            module.value_heads[0].weight.fill_(0.0)
+            module.value_heads[0].bias.fill_(0.0)
+            module.value_heads[1].weight.fill_(0.0)
+            module.value_heads[1].bias.fill_(2.0)
+
+    _, low_metrics = low_temperature(latent_state, training=True)
+    _, high_metrics = high_temperature(latent_state, training=True)
+
+    assert high_metrics["branch_entropy"] > low_metrics["branch_entropy"]
+    assert high_metrics["branch_probs"][0, 0, 1] < low_metrics["branch_probs"][0, 0, 1]
+
+
 def test_latent_branching_diversity_penalty_is_higher_for_identical_than_orthogonal_branches():
     module = LatentBranchingModule(latent_state_dim=2, num_branches=2)
     latent_state = torch.tensor([[[1.0, 0.0], [0.0, 1.0]]])

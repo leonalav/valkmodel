@@ -81,6 +81,7 @@ class ValkModelConfig(PretrainedConfig):
         branch_value_temperature: float = 1.0,
         branch_selection_mode: str = "top1",
         branch_diversity_weight: float = 0.01,
+        branch_entropy_weight: float = 0.0,
         branch_value_loss_weight: float = 0.0,
         latent_branching_init_scale: float = 0.02,
         **kwargs,
@@ -135,6 +136,7 @@ class ValkModelConfig(PretrainedConfig):
         self.branch_value_temperature = branch_value_temperature
         self.branch_selection_mode = branch_selection_mode
         self.branch_diversity_weight = branch_diversity_weight
+        self.branch_entropy_weight = branch_entropy_weight
         self.branch_value_loss_weight = branch_value_loss_weight
         self.latent_branching_init_scale = latent_branching_init_scale
 
@@ -268,6 +270,8 @@ class ValkModelConfig(PretrainedConfig):
             raise ValueError("branch_selection_mode must be 'soft' or 'top1'")
         if self.branch_diversity_weight < 0:
             raise ValueError("branch_diversity_weight must be nonnegative")
+        if self.branch_entropy_weight < 0:
+            raise ValueError("branch_entropy_weight must be nonnegative")
         if self.branch_value_loss_weight < 0:
             raise ValueError("branch_value_loss_weight must be nonnegative")
         if self.latent_branching_layers is not None and any(

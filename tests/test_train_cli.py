@@ -177,6 +177,7 @@ model:
   num_v_heads: 3
   intermediate_size: 64
   vocab_size: 32
+  branch_entropy_weight: 0.003
   moba_layers: [0]
 training:
   learning_rate: 0.001
@@ -191,6 +192,7 @@ training:
     config, training_args, metadata = load_training_config(training_path)
 
     assert config.hidden_size == 32
+    assert config.branch_entropy_weight == 0.003
     assert training_args.learning_rate == 0.001
     assert training_args.warmup_steps == 3
     assert training_args.num_training_steps == 7

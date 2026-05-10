@@ -176,6 +176,7 @@ class ValkTrainer:
             "tool": config.tool_loss_weight if self.args.tool_loss_weight is None else self.args.tool_loss_weight,
             "jepa": self._linear_warmup(0.0, config.jepa_loss_weight, step, self.args.jepa_warmup_steps),
             "branch": self._linear_warmup(0.0, config.branch_diversity_weight, step, self.args.branch_warmup_steps),
+            "branch_entropy": self._linear_warmup(0.0, config.branch_entropy_weight, step, self.args.branch_warmup_steps),
         }
         return weights
 
@@ -272,6 +273,7 @@ class ValkTrainer:
             "tool_weight": weights["tool"],
             "jepa_weight": weights["jepa"],
             "branch_weight": weights["branch"],
+            "branch_entropy_weight": weights["branch_entropy"],
             "jepa_loss": jepa_loss,
             "jepa_prediction_variance": self._to_float(jepa_metrics.get("prediction_variance")),
             "jepa_target_variance": self._to_float(jepa_metrics.get("target_variance")),
@@ -292,6 +294,7 @@ class ValkTrainer:
             tool_weight=weights["tool"],
             jepa_weight=weights["jepa"],
             branch_weight=weights["branch"],
+            branch_entropy_weight=weights["branch_entropy"],
             jepa_loss=jepa_loss,
             jepa_prediction_variance=metrics["jepa_prediction_variance"],
             jepa_target_variance=metrics["jepa_target_variance"],
@@ -338,6 +341,7 @@ class ValkTrainer:
             f"tool_w={metrics['tool_weight']:.4f}",
             f"jepa_w={metrics['jepa_weight']:.4f}",
             f"branch_w={metrics['branch_weight']:.4f}",
+            f"branch_entropy_w={metrics['branch_entropy_weight']:.4f}",
         ]
         for key in (
             "jepa_loss",

@@ -25,11 +25,13 @@
   "latent_state_layers": [5, 11],
   "use_jepa": true,
   "jepa_hidden_dim": 384,
-  "jepa_loss_weight": 0.1,
+  "jepa_loss_weight": 0.03,
   "jepa_min_horizon": 1,
   "jepa_max_horizon": 16,
   "use_latent_branching": true,
   "latent_branching_layers": [8],
   "num_branches": 4,
-  "branch_diversity_weight": 0.01
+  "branch_value_temperature": 1.5,
+  "branch_diversity_weight": 0.001,
+  "branch_entropy_weight": 0.003
 }

@@ -239,6 +239,7 @@ class ValkModelForCausalLM(ValkModelPreTrainedModel):
         tool_weight = self.config.tool_loss_weight if training_lambdas is None else training_lambdas.get("tool", self.config.tool_loss_weight)
         jepa_weight = self.config.jepa_loss_weight if training_lambdas is None else training_lambdas.get("jepa", self.config.jepa_loss_weight)
         branch_weight = self.config.branch_diversity_weight if training_lambdas is None else training_lambdas.get("branch", self.config.branch_diversity_weight)
+        branch_entropy_weight = self.config.branch_entropy_weight if training_lambdas is None else training_lambdas.get("branch_entropy", self.config.branch_entropy_weight)
         if labels is not None:
             ignore_index = self.config.pad_token_id if self.config.pad_token_id is not None else -100
             if tool_mask is None and input_ids is not None:
@@ -270,9 +271,13 @@ class ValkModelForCausalLM(ValkModelPreTrainedModel):
                 current, future, horizon_mask = create_jepa_pairs(outputs.latent_state, horizons)
                 jepa_loss, jepa_metrics = self.jepa_module(current, future, horizon_mask)
                 loss = loss + jepa_weight * jepa_loss
-            if self.training and outputs.branch_metrics is not None and branch_weight > 0:
-                diversity_loss = torch.stack([metrics["diversity_loss"] for metrics in outputs.branch_metrics]).mean()
-                loss = loss + branch_weight * diversity_loss
+            if self.training and outputs.branch_metrics is not None:
+                if branch_weight > 0:
+                    diversity_loss = torch.stack([metrics["diversity_loss"] for metrics in outputs.branch_metrics]).mean()
+                    loss = loss + branch_weight * diversity_loss
+                if branch_entropy_weight > 0:
+                    branch_entropy = torch.stack([metrics["branch_entropy"] for metrics in outputs.branch_metrics]).mean()
+                    loss = loss - branch_entropy_weight * branch_entropy
         return ValkCausalLMOutput(
             loss=loss,
             logits=logits,

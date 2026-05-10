@@ -90,6 +90,7 @@ class DDPValkTrainer(ValkTrainer):
             "tool": config.tool_loss_weight if self.args.tool_loss_weight is None else self.args.tool_loss_weight,
             "jepa": self._linear_warmup(0.0, config.jepa_loss_weight, step, self.args.jepa_warmup_steps),
             "branch": self._linear_warmup(0.0, config.branch_diversity_weight, step, self.args.branch_warmup_steps),
+            "branch_entropy": self._linear_warmup(0.0, config.branch_entropy_weight, step, self.args.branch_warmup_steps),
         }
 
     def unwrap_model(self) -> torch.nn.Module:

@@ -19,6 +19,7 @@ class TrainingStepMetrics:
     tool_weight: float | None = None
     jepa_weight: float | None = None
     branch_weight: float | None = None
+    branch_entropy_weight: float | None = None
     jepa_loss: float | None = None
     jepa_prediction_variance: float | None = None
     jepa_target_variance: float | None = None
@@ -55,6 +56,7 @@ class TrainingProfiler:
         tool_weight: float | None = None,
         jepa_weight: float | None = None,
         branch_weight: float | None = None,
+        branch_entropy_weight: float | None = None,
         jepa_loss: float | None = None,
         jepa_prediction_variance: float | None = None,
         jepa_target_variance: float | None = None,
@@ -78,6 +80,7 @@ class TrainingProfiler:
                 tool_weight=self._optional_float(tool_weight),
                 jepa_weight=self._optional_float(jepa_weight),
                 branch_weight=self._optional_float(branch_weight),
+                branch_entropy_weight=self._optional_float(branch_entropy_weight),
                 jepa_loss=self._optional_float(jepa_loss),
                 jepa_prediction_variance=self._optional_float(jepa_prediction_variance),
                 jepa_target_variance=self._optional_float(jepa_target_variance),
@@ -110,6 +113,7 @@ class TrainingProfiler:
                 "tool_weight",
                 "jepa_weight",
                 "branch_weight",
+                "branch_entropy_weight",
                 "jepa_loss",
                 "jepa_prediction_variance",
                 "jepa_target_variance",

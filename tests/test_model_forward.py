@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from valkmodel import ValkModelConfig, ValkModelForCausalLM
@@ -180,6 +181,50 @@ def test_jepa_target_encoder_updates_only_when_explicitly_requested():
 
     expected = 0.95 * original + 0.05 * model.jepa_module.context_encoder.weight.detach()
     assert torch.allclose(model.jepa_module.target_encoder.weight, expected)
+
+
+def test_branch_entropy_regularization_reduces_training_loss_only():
+    torch.manual_seed(0)
+    base_config = tiny_config(
+        use_latent_state=True,
+        latent_state_dim=32,
+        latent_state_layers=[0],
+        use_latent_branching=True,
+        latent_branching_layers=[0],
+        num_branches=3,
+        branch_diversity_weight=0.0,
+        branch_entropy_weight=0.0,
+    )
+    entropy_config = tiny_config(
+        use_latent_state=True,
+        latent_state_dim=32,
+        latent_state_layers=[0],
+        use_latent_branching=True,
+        latent_branching_layers=[0],
+        num_branches=3,
+        branch_diversity_weight=0.0,
+        branch_entropy_weight=0.25,
+    )
+    base_model = ValkModelForCausalLM(base_config)
+    entropy_model = ValkModelForCausalLM(entropy_config)
+    entropy_model.load_state_dict(base_model.state_dict())
+    input_ids = torch.randint(0, base_config.vocab_size, (2, 6))
+
+    base_model.train()
+    entropy_model.train()
+    base_outputs = base_model(input_ids=input_ids, labels=input_ids)
+    entropy_outputs = entropy_model(input_ids=input_ids, labels=input_ids)
+    branch_entropy = torch.stack([metrics["branch_entropy"] for metrics in entropy_outputs.branch_metrics]).mean()
+
+    assert entropy_outputs.loss.item() == pytest.approx((base_outputs.loss - 0.25 * branch_entropy).item())
+
+    base_model.eval()
+    entropy_model.eval()
+    with torch.no_grad():
+        base_eval = base_model(input_ids=input_ids, labels=input_ids)
+        entropy_eval = entropy_model(input_ids=input_ids, labels=input_ids)
+
+    assert entropy_eval.loss.item() == pytest.approx(base_eval.loss.item())
 
 
 def test_latent_branching_metrics_and_loss_are_training_only():

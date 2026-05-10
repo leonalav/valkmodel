@@ -78,8 +78,10 @@ def test_auxiliary_loss_warmup_schedules_reach_targets(tmp_path):
 
     assert step0["jepa"] == 0.0
     assert step0["branch"] == 0.0
+    assert step0["branch_entropy"] == 0.0
     assert step2["jepa"] == model.config.jepa_loss_weight * 0.5
     assert step2["branch"] == model.config.branch_diversity_weight
+    assert step2["branch_entropy"] == model.config.branch_entropy_weight
     assert step4["jepa"] == model.config.jepa_loss_weight
 
 
@@ -160,6 +162,8 @@ def test_trainer_log_step_records_health_metrics_and_prints_on_log_boundary(tmp_
     assert trainer.last_metrics["learning_rate"] == trainer.scheduler.get_last_lr()[0]
     assert trainer.last_metrics["perplexity"] > 0
     assert trainer.last_metrics["jepa_prediction_variance"] == 0.3
+    assert trainer.last_metrics["branch_entropy_weight"] == model.config.branch_entropy_weight
+    assert "branch_entropy_w=" in captured
     assert trainer.last_metrics["branch_entropy_mean"] == pytest.approx(0.8)
     assert trainer.last_metrics["branch_diversity_loss_mean"] == pytest.approx(0.8)
     assert trainer.last_metrics["branch_variance_mean"] == pytest.approx(1.0)
