@@ -8,9 +8,8 @@ model:
   intermediate_size: 3072
   vocab_size: 128256
   max_position_embeddings: 272000
-  max_training_seq_len: 2048
   attn_mode: chunk
-  gdn_backend: auto
+  gdn_backend: fla
   use_gate: true
   use_short_conv: true
   conv_size: 4
@@ -44,5 +43,5 @@ training:
   branch_warmup_steps: 8000
   jepa_ema_update_every: 1
   use_curriculum: true
-  curriculum_stages: [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
+  curriculum_stages: [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072]
   curriculum_steps_per_stage: 2500

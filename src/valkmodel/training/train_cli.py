@@ -204,6 +204,9 @@ def build_trainer_from_args(args: argparse.Namespace) -> ValkTrainer:
         tokenizer = load_tokenizer_from_config(paths["tokenizer"])
         train_dataloader = build_dataloader_from_config(paths["data"], tokenizer, block_size=args.seq_len, batch_size=training_args.batch_size)
         model = ValkModelForCausalLM(config)
+        backends = set(layer.attn.backend for layer in model.model.layers)
+        print(f"[DEBUG] GDN backends in use: {backends}")
+        assert backends == {"fla"}, f"Expected fla, got {backends}"
         trainer = ValkTrainer(model=model, train_dataset=None, args=training_args, train_dataloader=train_dataloader)
         trainer.config_metadata = metadata
         print(f"training_config={paths['training']}")
@@ -219,6 +222,9 @@ def build_trainer_from_args(args: argparse.Namespace) -> ValkTrainer:
         training_args = _training_args_from_cli(args)
         _set_output_dirs(training_args, output_dir)
         model = ValkModelForCausalLM(config)
+        backends = set(layer.attn.backend for layer in model.model.layers)
+        print(f"[DEBUG] GDN backends in use: {backends}")
+        assert backends == {"fla"}, f"Expected fla, got {backends}"
         trainer = ValkTrainer(model=model, train_dataset=train_dataset, eval_dataset=eval_dataset, args=training_args)
     if args.resume_from:
         trainer.load_checkpoint(str(resolve_path(args.resume_from)))
