@@ -42,6 +42,8 @@ class TrainingArguments:
     use_curriculum: bool = False
     curriculum_stages: list[int] | None = None
     curriculum_steps_per_stage: int = 1000
+    use_streaming: bool = True
+    packed_shard_root: str | None = None
 
     def __post_init__(self) -> None:
         if self.learning_rate <= 0 or self.min_learning_rate < 0:
@@ -71,6 +73,7 @@ class ValkTrainer:
         eval_dataset: Dataset | None = None,
         train_dataloader: DataLoader | None = None,
         eval_dataloader: DataLoader | None = None,
+        dataloader_factory: Any | None = None,
     ):
         self.model = model
         self.train_dataset = train_dataset
@@ -79,6 +82,7 @@ class ValkTrainer:
         torch.manual_seed(self.args.seed)
         self.device = torch.device(self.args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.model.to(self.device)
+        self.dataloader_factory = dataloader_factory
         if train_dataloader is not None:
             self.train_dataloader = train_dataloader
         elif train_dataset is not None:
@@ -110,6 +114,9 @@ class ValkTrainer:
         self.optimizer.zero_grad(set_to_none=True)
         data_iter = iter(self.train_dataloader)
         last_loss = 0.0
+        _prev_stage_index: int = (
+            self.curriculum._stage_index(self.global_step) if self.curriculum is not None else -1
+        )
         while self.global_step < self.args.num_training_steps:
             step_started = time.perf_counter()
             accumulated_loss = 0.0
@@ -141,6 +148,14 @@ class ValkTrainer:
             self.global_step += 1
             if self.model.training and getattr(self.model, "jepa_module", None) is not None and self.global_step % self.args.jepa_ema_update_every == 0:
                 self.model.jepa_module.update_target_encoder()
+            # Curriculum dataloader rebuild on stage transition
+            if self.curriculum is not None and self.dataloader_factory is not None:
+                new_stage_index = self.curriculum._stage_index(self.global_step)
+                if new_stage_index != _prev_stage_index:
+                    new_block_size = self.curriculum.get_current_context_length(self.global_step)
+                    self.train_dataloader = self.dataloader_factory(new_block_size)
+                    data_iter = iter(self.train_dataloader)
+                    _prev_stage_index = new_stage_index
             elapsed = max(time.perf_counter() - step_started, 1e-12)
             last_loss = accumulated_loss
             self._log_step(last_loss, self.last_grad_norm, token_count / elapsed, latest_outputs)

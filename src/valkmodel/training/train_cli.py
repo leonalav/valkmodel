@@ -111,6 +111,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--use-curriculum", action="store_true")
     parser.add_argument("--curriculum-stages", type=int, nargs="+")
     parser.add_argument("--curriculum-steps-per-stage", type=int, default=1000)
+    parser.add_argument("--use-streaming", action="store_true", default=True, dest="use_streaming")
+    parser.add_argument("--no-use-streaming", action="store_false", dest="use_streaming")
+    parser.add_argument("--packed-shard-root", type=str, default=None)
     parser.add_argument("--hidden-size", type=int)
     parser.add_argument("--num-hidden-layers", type=int)
     parser.add_argument("--num-heads", type=int)
@@ -163,11 +166,25 @@ def load_tokenizer_from_config(path: str | Path):
     return load_tokenizer(tokenizer_name_or_path, **payload)
 
 
-def build_dataloader_from_config(path: str | Path, tokenizer: Any, block_size: int, batch_size: int):
+def build_dataloader_from_config(
+    path: str | Path,
+    tokenizer: Any,
+    block_size: int,
+    batch_size: int,
+    use_streaming: bool = True,
+    packed_shard_root: str | Path | None = None,
+):
     ensure_project_data_import_path()
     from data.dataloader_builder import build_training_dataloader
 
-    return build_training_dataloader(resolve_path(path), tokenizer, block_size=block_size, batch_size=batch_size)
+    return build_training_dataloader(
+        resolve_path(path),
+        tokenizer,
+        block_size=block_size,
+        batch_size=batch_size,
+        use_streaming=use_streaming,
+        packed_shard_root=resolve_path(packed_shard_root) if packed_shard_root is not None else None,
+    )
 
 
 def load_token_documents(path: str) -> list[list[int]]:
@@ -202,12 +219,34 @@ def build_trainer_from_args(args: argparse.Namespace) -> ValkTrainer:
         _apply_cli_training_overrides(training_args, args)
         _set_output_dirs(training_args, output_dir)
         tokenizer = load_tokenizer_from_config(paths["tokenizer"])
-        train_dataloader = build_dataloader_from_config(paths["data"], tokenizer, block_size=args.seq_len, batch_size=training_args.batch_size)
+        use_streaming = getattr(args, "use_streaming", True)
+        packed_shard_root = getattr(args, "packed_shard_root", None)
+        train_dataloader = build_dataloader_from_config(
+            paths["data"], tokenizer,
+            block_size=args.seq_len,
+            batch_size=training_args.batch_size,
+            use_streaming=use_streaming,
+            packed_shard_root=packed_shard_root,
+        )
+
+        def dataloader_factory(block_size: int):
+            return build_dataloader_from_config(
+                paths["data"], tokenizer,
+                block_size=block_size,
+                batch_size=training_args.batch_size,
+                use_streaming=use_streaming,
+                packed_shard_root=packed_shard_root,
+            )
+
         model = ValkModelForCausalLM(config)
         backends = set(layer.attn.backend for layer in model.model.layers)
         print(f"[DEBUG] GDN backends in use: {backends}")
         assert backends == {"fla"}, f"Expected fla, got {backends}"
-        trainer = ValkTrainer(model=model, train_dataset=None, args=training_args, train_dataloader=train_dataloader)
+        trainer = ValkTrainer(
+            model=model, train_dataset=None, args=training_args,
+            train_dataloader=train_dataloader,
+            dataloader_factory=dataloader_factory,
+        )
         trainer.config_metadata = metadata
         print(f"training_config={paths['training']}")
         print(f"data_config={paths['data']}")
@@ -332,6 +371,8 @@ def _training_args_from_cli(args: argparse.Namespace) -> TrainingArguments:
         use_curriculum=args.use_curriculum,
         curriculum_stages=args.curriculum_stages,
         curriculum_steps_per_stage=args.curriculum_steps_per_stage,
+        use_streaming=args.use_streaming,
+        packed_shard_root=args.packed_shard_root,
     )
 
 
@@ -358,6 +399,8 @@ def _apply_cli_training_overrides(training_args: TrainingArguments, args: argpar
         "use_curriculum": "use_curriculum",
         "curriculum_stages": "curriculum_stages",
         "curriculum_steps_per_stage": "curriculum_steps_per_stage",
+        "use_streaming": "use_streaming",
+        "packed_shard_root": "packed_shard_root",
     }
     for arg_name, field_name in override_map.items():
         value = getattr(args, arg_name)
