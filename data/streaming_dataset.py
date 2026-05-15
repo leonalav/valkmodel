@@ -50,7 +50,9 @@ def build_dataset_load_kwargs(spec: DatasetSpec) -> dict[str, Any]:
     }
     if spec.revision:
         kwargs['revision'] = spec.revision
-    if spec.hf_path == 'uonlp/CulturaX' and spec.language is not None:
+    if spec.subset is not None:
+        kwargs['name'] = spec.subset
+    elif spec.hf_path == 'uonlp/CulturaX' and spec.language is not None:
         kwargs['name'] = spec.language
     return kwargs
 

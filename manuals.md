@@ -44,3 +44,46 @@ valkmodel-train \
   --device cuda \
   --bf16
 ```
+
+Pretok build:
+
+```bash
+python -m data.pretok.cli build \
+  --output-dir /root/data/pretok-out \
+  --tokenizer meta-llama/Meta-Llama-3-8B-Instruct \
+  --dataset fineweb_edu \
+  --dataset the_stack_v2 \
+  --dataset open_web_math \
+  --stage 1024 \
+  --stage 2048 \
+  --stage 4096 \
+  --stage 8192 \
+  --stage 16384 \
+  --stage 32768 \
+  --stage 65536 \
+  --stage 131072 \
+  --num-workers 4 \
+  --shard-size 50000
+```
+
+Pretok publish:
+
+```bash
+python -m data.pretok.cli publish \
+  --output-dir /root/data/pretok-out \
+  --repo-id leonidas123/valkmodel-data
+```
+
+Smoke test one dataset:
+
+```bash
+python -m data.pretok.cli build \
+  --output-dir /root/data/pretok-smoke \
+  --tokenizer meta-llama/Meta-Llama-3-8B-Instruct \
+  --dataset fineweb_edu \
+  --stage 1024 \
+  --limit 1000 \
+  --num-workers 1
+```
+
+For Windows, start with `--num-workers 0` or `1` if multiprocessing is unstable.

@@ -10,12 +10,12 @@ class DatasetSpec:
     split: str = 'train'
     text_field: str = 'text'
     language: str | None = None
+    subset: str | None = None
     weight: float = 1.0
     revision: str | None = None
 
-
 DEFAULT_DATASET_SPECS: dict[str, DatasetSpec] = {
-    'fineweb_edu': DatasetSpec(name='fineweb_edu', hf_path='HuggingFaceFW/fineweb-edu', weight=0.35),
+    'fineweb_edu': DatasetSpec(name='fineweb_edu', hf_path='HuggingFaceFW/fineweb-edu', subset='sample-10BT', weight=0.35),
     'the_stack_v2': DatasetSpec(name='the_stack_v2', hf_path='bigcode/the-stack-v2', weight=0.22),
     'open_web_math': DatasetSpec(name='open_web_math', hf_path='open-web-math/open-web-math', weight=0.12),
     'culturax_zh': DatasetSpec(name='culturax_zh', hf_path='uonlp/CulturaX', language='zh', weight=0.07),
