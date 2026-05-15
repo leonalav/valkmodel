@@ -52,7 +52,6 @@ python -m data.pretok.cli build \
   --output-dir /root/data/pretok-out \
   --tokenizer meta-llama/Meta-Llama-3-8B-Instruct \
   --dataset fineweb_edu \
-  --dataset the_stack_v2 \
   --dataset open_web_math \
   --stage 1024 \
   --stage 2048 \
@@ -62,7 +61,7 @@ python -m data.pretok.cli build \
   --stage 32768 \
   --stage 65536 \
   --stage 131072 \
-  --num-workers 4 \
+  --num-workers 20 \
   --shard-size 50000
 ```
 

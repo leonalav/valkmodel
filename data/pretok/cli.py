@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -65,13 +64,32 @@ def _build_datasets(registry: DatasetRegistry, dataset_names: list[str]) -> list
     return names
 
 
-def _iter_docs_with_progress(spec: Any, tokenizer: Any, *, limit: int | None, dataset_name: str):
-    iterator = iter_tokenized_documents_for_spec(spec, tokenizer, limit=limit)
-    yield from _tqdm(
-        iterator,
+def _print(message: str) -> None:
+    print(message, flush=True)
+
+
+def _log_dataset_start(dataset_name: str) -> None:
+    _print(f"pretok dataset start: {dataset_name}")
+
+
+def _log_dataset_done(dataset_name: str, docs: int) -> None:
+    _print(f"pretok dataset done: {dataset_name} docs={docs}")
+
+
+def _log_stage_start(dataset_name: str, stage: int) -> None:
+    _print(f"pretok stage start: {dataset_name} stage={stage}")
+
+
+def _log_stage_done(dataset_name: str, stage: int) -> None:
+    _print(f"pretok stage done: {dataset_name} stage={stage}")
+
+
+def _build_doc_iter(spec: Any, tokenizer: Any, *, limit: int | None, dataset_name: str):
+    return _tqdm(
+        iter_tokenized_documents_for_spec(spec, tokenizer, limit=limit),
         desc=f"tokenize:{dataset_name}",
         unit="doc",
-        disable=not sys.stdout.isatty(),
+        disable=False,
     )
 
 
@@ -96,11 +114,19 @@ def _build_single_dataset(output_dir: str | Path, tokenizer_name: str, dataset_n
     registry = build_pretok_registry(DatasetRegistry())
     tokenizer = _tokenizer_for_name(tokenizer_name)
     spec = registry.get(dataset_name)
-    docs = list(_iter_docs_with_progress(spec, tokenizer, limit=limit, dataset_name=dataset_name))
 
+    _log_dataset_start(dataset_name)
+    docs = []
+    for doc in _build_doc_iter(spec, tokenizer, limit=limit, dataset_name=dataset_name):
+        docs.append(doc)
     _write_arrow_dataset(output_root, dataset_name, docs)
-    for stage in _tqdm(stages, desc=f"pack:{dataset_name}", unit="stage", disable=not sys.stdout.isatty()):
+    _log_dataset_done(dataset_name, len(docs))
+
+    for stage in _tqdm(stages, desc=f"pack:{dataset_name}", unit="stage", disable=False):
+        _log_stage_start(dataset_name, stage)
         _write_packed_dataset(output_root, dataset_name, stage, tokenizer.eos_token_id, docs)
+        _log_stage_done(dataset_name, stage)
+
     return {"dataset": dataset_name, "documents": len(docs), "stages": stages}
 
 
@@ -113,9 +139,11 @@ def _build_pretok_output(output_dir: Path, tokenizer_name: str, dataset_names: l
     datasets = _build_datasets(registry, dataset_names)
     worker_count = max(1, num_workers)
 
+    _print(f"pretok build start: datasets={len(datasets)} workers={worker_count} shard_size={shard_size}")
+
     results: list[dict[str, object]] = []
     if worker_count == 1:
-        for dataset_name in _tqdm(datasets, desc="datasets", unit="dataset", disable=not sys.stdout.isatty()):
+        for dataset_name in _tqdm(datasets, desc="datasets", unit="dataset", disable=False):
             results.append(_build_single_dataset(output_dir, tokenizer_name, dataset_name, stages, limit=limit))
     else:
         with ThreadPoolExecutor(max_workers=worker_count) as executor:
@@ -123,7 +151,7 @@ def _build_pretok_output(output_dir: Path, tokenizer_name: str, dataset_names: l
                 executor.submit(_build_single_dataset, output_dir, tokenizer_name, dataset_name, stages, limit)
                 for dataset_name in datasets
             ]
-            for future in _tqdm(as_completed(futures), total=len(futures), desc="datasets", unit="dataset", disable=not sys.stdout.isatty()):
+            for future in _tqdm(as_completed(futures), total=len(futures), desc="datasets", unit="dataset", disable=False):
                 results.append(future.result())
 
     manifest = {
@@ -135,6 +163,7 @@ def _build_pretok_output(output_dir: Path, tokenizer_name: str, dataset_names: l
         "results": sorted(results, key=lambda item: str(item["dataset"])),
     }
     (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    _print(f"pretok build complete: output_dir={output_dir}")
 
 
 def upload_output_to_hf(output_dir: str | Path, repo_id: str, revision: str | None = None) -> None:
@@ -146,7 +175,9 @@ def upload_output_to_hf(output_dir: str | Path, repo_id: str, revision: str | No
 
 
 def _publish_output(output_dir: str | Path, repo_id: str, revision: str | None = None) -> None:
+    _print(f"pretok publish start: output_dir={output_dir} repo_id={repo_id}")
     upload_output_to_hf(output_dir, repo_id, revision=revision)
+    _print(f"pretok publish complete: repo_id={repo_id}")
 
 
 def main(argv: list[str] | None = None) -> int:
