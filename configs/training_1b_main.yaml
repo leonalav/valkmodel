@@ -42,5 +42,5 @@ training:
   branch_warmup_steps: 10000
   jepa_ema_update_every: 1
   use_curriculum: true
-  curriculum_stages: [2048, 4096, 8192, 16384, 32768]
+  curriculum_stages: [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072]
   curriculum_steps_per_stage: 10000
