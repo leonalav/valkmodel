@@ -14,6 +14,8 @@ from typing import Any, Iterable
 import pyarrow as pa
 import pyarrow.ipc as pa_ipc
 from datasets import Dataset, IterableDataset, load_dataset
+from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub.errors import EntryNotFoundError, RepositoryNotFoundError
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
@@ -29,6 +31,8 @@ DEFAULT_CURRICULUM_STAGES = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072
 DEFAULT_TOKENIZER = "meta-llama/Meta-Llama-3-8B"
 DEFAULT_OUTPUT_DIR = Path("data/pretokenized")
 DEFAULT_CACHE_DIR = Path(".cache/hf_datasets_pretok")
+DEFAULT_HUB_REPO_ID = "leonidas123/valkmodel-data"
+DEFAULT_HUB_REPO_TYPE = "dataset"
 DEFAULT_SHARD_SIZE = 10_000
 MIN_CHARS = 64
 TEXT_COLUMN = "text"
@@ -237,6 +241,33 @@ def write_curriculum_stage(
         write_shard(rows, output_dir, fmt, shard_id)
 
 
+def hub_path_exists(api: HfApi, repo_id: str, repo_type: str, path_in_repo: str) -> bool:
+    try:
+        hf_hub_download(
+            repo_id=repo_id,
+            repo_type=repo_type,
+            filename=f"{path_in_repo}/_SUCCESS",
+        )
+        return True
+    except (EntryNotFoundError, RepositoryNotFoundError):
+        return False
+
+
+def upload_directory(api: HfApi, local_dir: Path, repo_id: str, repo_type: str, path_in_repo: str) -> None:
+    api.upload_folder(
+        folder_path=str(local_dir),
+        repo_id=repo_id,
+        repo_type=repo_type,
+        path_in_repo=path_in_repo,
+        commit_message=f"Upload {path_in_repo}",
+    )
+
+
+def remove_path(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def remove_dataset_cache(dataset: Dataset | IterableDataset | None, cache_dir: Path) -> None:
     if dataset is not None and hasattr(dataset, "cleanup_cache_files"):
         try:
@@ -244,8 +275,7 @@ def remove_dataset_cache(dataset: Dataset | IterableDataset | None, cache_dir: P
         except (OSError, RuntimeError):
             pass
     gc.collect()
-    if cache_dir.exists():
-        shutil.rmtree(cache_dir, ignore_errors=True)
+    remove_path(cache_dir)
 
 
 def load_raw_dataset(spec: PretokenizationSpec, cache_dir: Path, streaming: bool) -> Dataset | IterableDataset:
@@ -272,10 +302,20 @@ def tokenize_spec(
     shard_size: int,
     streaming: bool,
     limit: int | None,
+    hub_api: HfApi,
+    hub_repo_id: str,
+    hub_repo_type: str,
 ) -> None:
     spec_output_dir = output_root_for_spec(output_root, spec)
+    path_in_repo = spec_output_dir.relative_to(output_root).as_posix()
     if is_complete(spec_output_dir):
         print(f"Skipping {spec.name}: found {success_marker(spec_output_dir)}")
+        upload_directory(hub_api, spec_output_dir, hub_repo_id, hub_repo_type, path_in_repo)
+        remove_path(spec_output_dir)
+        return
+    if hub_path_exists(hub_api, hub_repo_id, hub_repo_type, path_in_repo):
+        print(f"Skipping {spec.name}: found {path_in_repo}/_SUCCESS in {hub_repo_id}")
+        remove_path(spec_output_dir)
         return
 
     cache_dir = cache_root / spec.name
@@ -301,8 +341,11 @@ def tokenize_spec(
         pending_stage_dirs = {}
         for stage in stages:
             stage_dir = spec_output_dir / f"seq_{stage}"
+            stage_path_in_repo = f"{path_in_repo}/seq_{stage}"
             if is_complete(stage_dir):
                 print(f"Skipping {spec.name} seq_{stage}: found {success_marker(stage_dir)}")
+            elif hub_path_exists(hub_api, hub_repo_id, hub_repo_type, stage_path_in_repo):
+                print(f"Skipping {spec.name} seq_{stage}: found {stage_path_in_repo}/_SUCCESS in {hub_repo_id}")
             else:
                 pending_stage_dirs[stage] = stage_dir
 
@@ -312,7 +355,10 @@ def tokenize_spec(
             success_marker(stage_dir).write_text("ok\n", encoding="utf-8")
             gc.collect()
 
+        spec_output_dir.mkdir(parents=True, exist_ok=True)
         success_marker(spec_output_dir).write_text("ok\n", encoding="utf-8")
+        upload_directory(hub_api, spec_output_dir, hub_repo_id, hub_repo_type, path_in_repo)
+        remove_path(spec_output_dir)
     finally:
         remove_dataset_cache(prepared, cache_dir)
         remove_dataset_cache(raw_dataset, cache_dir)
@@ -337,6 +383,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-proc", type=int, default=max((os.cpu_count() or 2) - 1, 1))
     parser.add_argument("--batch-size", type=int, default=1024)
     parser.add_argument("--shard-size", type=int, default=DEFAULT_SHARD_SIZE)
+    parser.add_argument("--hub-repo-id", default=DEFAULT_HUB_REPO_ID)
+    parser.add_argument("--hub-repo-type", default=DEFAULT_HUB_REPO_TYPE)
     parser.add_argument("--streaming", action="store_true", help="Stream then materialize rows before multiprocessing tokenization.")
     parser.add_argument("--limit", type=int, default=None, help="Optional per-dataset row limit for dry runs or probes.")
     return parser.parse_args()
@@ -358,6 +406,9 @@ def main() -> None:
     if tokenizer.eos_token_id is None:
         raise ValueError("Tokenizer must define eos_token_id for document boundaries.")
 
+    hub_api = HfApi()
+    hub_api.create_repo(repo_id=args.hub_repo_id, repo_type=args.hub_repo_type, exist_ok=True)
+
     args.output_dir.mkdir(parents=True, exist_ok=True)
     args.cache_dir.mkdir(parents=True, exist_ok=True)
     for spec in specs:
@@ -373,6 +424,9 @@ def main() -> None:
             shard_size=args.shard_size,
             streaming=args.streaming,
             limit=args.limit,
+            hub_api=hub_api,
+            hub_repo_id=args.hub_repo_id,
+            hub_repo_type=args.hub_repo_type,
         )
 
 
