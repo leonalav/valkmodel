@@ -4,7 +4,6 @@ import argparse
 import gc
 import multiprocessing as mp
 import os
-from collections.abc import Iterator
 import shutil
 import sys
 from dataclasses import dataclass
@@ -186,7 +185,7 @@ def iter_tokenized_batches(
     else:
         context = mp.get_context("fork")
         with context.Pool(processes=num_proc, initializer=init_tokenizer_worker, initargs=(tokenizer_name_or_path,)) as pool:
-            iterator = pool.imap(tokenize_worker, batches)
+            iterator = pool.imap_unordered(tokenize_worker, batches, chunksize=4)
             yield from progress_bar(iterator, total=total, desc=f"{spec_name}: tokenizing")
 
 
@@ -223,36 +222,47 @@ def flush_full_shards(
     return shard_id
 
 
-def iter_packed_blocks(token_batches, stage: int, eos_token_id: int) -> Iterator[list[int]]:
-    buffer: list[int] = []
-    for tokens_batch in token_batches:
-        for tokens in tokens_batch:
-            buffer.extend(tokens)
-            buffer.append(eos_token_id)
-            while len(buffer) >= stage:
-                yield buffer[:stage]
-                del buffer[:stage]
-
-
-def write_curriculum_stage(
+def write_all_curriculum_stages(
     token_batches,
-    output_dir: Path,
+    stage_dirs: dict[int, Path],
     fmt: str,
-    stage: int,
     eos_token_id: int,
     shard_size: int,
     max_shard_tokens: int,
 ) -> None:
-    rows: dict[str, list[Any]] = {"input_ids": [], "token_count": [], "seq_len": []}
-    rows_per_shard = max_rows_per_shard(stage, shard_size, max_shard_tokens)
-    shard_id = 0
-    for block in iter_packed_blocks(token_batches, stage, eos_token_id):
-        rows["input_ids"].append(block)
-        rows["token_count"].append(stage)
-        rows["seq_len"].append(stage)
-        shard_id = flush_full_shards(rows, output_dir, fmt, rows_per_shard, shard_id)
-    if rows["input_ids"]:
-        write_shard(rows, output_dir, fmt, shard_id)
+    buffers = {stage: [] for stage in stage_dirs}
+    shard_ids = {stage: 0 for stage in stage_dirs}
+    rows_per_shard = {
+        stage: max_rows_per_shard(stage, shard_size, max_shard_tokens)
+        for stage in stage_dirs
+    }
+    rows_by_stage: dict[int, dict[str, list[Any]]] = {
+        stage: {"input_ids": [], "token_count": [], "seq_len": []}
+        for stage in stage_dirs
+    }
+
+    for tokens_batch in token_batches:
+        for tokens in tokens_batch:
+            for stage, buffer in buffers.items():
+                buffer.extend(tokens)
+                buffer.append(eos_token_id)
+                rows = rows_by_stage[stage]
+                while len(buffer) >= stage:
+                    rows["input_ids"].append(buffer[:stage])
+                    rows["token_count"].append(stage)
+                    rows["seq_len"].append(stage)
+                    del buffer[:stage]
+                    shard_ids[stage] = flush_full_shards(
+                        rows,
+                        stage_dirs[stage],
+                        fmt,
+                        rows_per_shard[stage],
+                        shard_ids[stage],
+                    )
+
+    for stage, rows in rows_by_stage.items():
+        if rows["input_ids"]:
+            write_shard(rows, stage_dirs[stage], fmt, shard_ids[stage])
 
 
 def hub_path_exists(api: HfApi, repo_id: str, repo_type: str, path_in_repo: str) -> bool:
@@ -364,10 +374,18 @@ def tokenize_spec(
             else:
                 pending_stage_dirs[stage] = stage_dir
 
-        for stage, stage_dir in pending_stage_dirs.items():
+        if pending_stage_dirs:
             token_batches = iter_tokenized_batches(prepared, tokenizer, tokenizer_name_or_path, spec.name, batch_size, num_proc)
-            write_curriculum_stage(token_batches, stage_dir, spec.output_format, stage, tokenizer.eos_token_id, shard_size, max_shard_tokens)
-            success_marker(stage_dir).write_text("ok\n", encoding="utf-8")
+            write_all_curriculum_stages(
+                token_batches,
+                pending_stage_dirs,
+                spec.output_format,
+                tokenizer.eos_token_id,
+                shard_size,
+                max_shard_tokens,
+            )
+            for stage_dir in pending_stage_dirs.values():
+                success_marker(stage_dir).write_text("ok\n", encoding="utf-8")
             gc.collect()
 
         spec_output_dir.mkdir(parents=True, exist_ok=True)
