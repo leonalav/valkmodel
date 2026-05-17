@@ -85,4 +85,13 @@ python -m data.pretok.cli build \
   --num-workers 1
 ```
 
-For Windows, start with `--num-workers 0` or `1` if multiprocessing is unstable.
+Pretokenization:
+python -m data.pretokenization \
+    --num-proc 30 \
+    --batch-size 128 \
+    --shard-size 10000 \
+    --max-shard-tokens 8388608 \
+    --cache-dir /tmp/valkmodel_hf_cache \
+    --output-dir /tmp/valkmodel_pretokenized \
+    --hub-repo-id leonidas123/valkmodel-data \
+    --hub-repo-type dataset

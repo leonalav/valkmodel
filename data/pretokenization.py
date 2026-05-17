@@ -34,6 +34,8 @@ DEFAULT_CACHE_DIR = Path(".cache/hf_datasets_pretok")
 DEFAULT_HUB_REPO_ID = "leonidas123/valkmodel-data"
 DEFAULT_HUB_REPO_TYPE = "dataset"
 DEFAULT_SHARD_SIZE = 10_000
+DEFAULT_MAX_SHARD_TOKENS = 8_388_608
+DEFAULT_BATCH_SIZE = 128
 MIN_CHARS = 64
 TEXT_COLUMN = "text"
 _WORKER_TOKENIZER: PreTrainedTokenizerBase | None = None
@@ -201,13 +203,23 @@ def write_shard(rows: dict[str, list[Any]], output_dir: Path, fmt: str, shard_id
         shard.to_parquet(str(shard_path))
 
 
-def flush_full_shards(rows: dict[str, list[Any]], output_dir: Path, fmt: str, shard_size: int, shard_id: int) -> int:
-    while len(rows["input_ids"]) >= shard_size:
-        shard_rows = {key: value[:shard_size] for key, value in rows.items()}
+def max_rows_per_shard(stage: int, shard_size: int, max_shard_tokens: int) -> int:
+    return max(1, min(shard_size, max_shard_tokens // stage))
+
+
+def flush_full_shards(
+    rows: dict[str, list[Any]],
+    output_dir: Path,
+    fmt: str,
+    rows_per_shard: int,
+    shard_id: int,
+) -> int:
+    while len(rows["input_ids"]) >= rows_per_shard:
+        shard_rows = {key: value[:rows_per_shard] for key, value in rows.items()}
         write_shard(shard_rows, output_dir, fmt, shard_id)
         shard_id += 1
         for key in rows:
-            rows[key] = rows[key][shard_size:]
+            rows[key] = rows[key][rows_per_shard:]
     return shard_id
 
 
@@ -229,14 +241,16 @@ def write_curriculum_stage(
     stage: int,
     eos_token_id: int,
     shard_size: int,
+    max_shard_tokens: int,
 ) -> None:
     rows: dict[str, list[Any]] = {"input_ids": [], "token_count": [], "seq_len": []}
+    rows_per_shard = max_rows_per_shard(stage, shard_size, max_shard_tokens)
     shard_id = 0
     for block in iter_packed_blocks(token_batches, stage, eos_token_id):
         rows["input_ids"].append(block)
         rows["token_count"].append(stage)
         rows["seq_len"].append(stage)
-        shard_id = flush_full_shards(rows, output_dir, fmt, shard_size, shard_id)
+        shard_id = flush_full_shards(rows, output_dir, fmt, rows_per_shard, shard_id)
     if rows["input_ids"]:
         write_shard(rows, output_dir, fmt, shard_id)
 
@@ -300,6 +314,7 @@ def tokenize_spec(
     num_proc: int,
     batch_size: int,
     shard_size: int,
+    max_shard_tokens: int,
     streaming: bool,
     limit: int | None,
     hub_api: HfApi,
@@ -351,7 +366,7 @@ def tokenize_spec(
 
         for stage, stage_dir in pending_stage_dirs.items():
             token_batches = iter_tokenized_batches(prepared, tokenizer, tokenizer_name_or_path, spec.name, batch_size, num_proc)
-            write_curriculum_stage(token_batches, stage_dir, spec.output_format, stage, tokenizer.eos_token_id, shard_size)
+            write_curriculum_stage(token_batches, stage_dir, spec.output_format, stage, tokenizer.eos_token_id, shard_size, max_shard_tokens)
             success_marker(stage_dir).write_text("ok\n", encoding="utf-8")
             gc.collect()
 
@@ -381,8 +396,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stages", type=parse_stages, default=DEFAULT_CURRICULUM_STAGES)
     parser.add_argument("--datasets", nargs="*", default=None, help="Dataset names to tokenize. Defaults to every included dataset.")
     parser.add_argument("--num-proc", type=int, default=max((os.cpu_count() or 2) - 1, 1))
-    parser.add_argument("--batch-size", type=int, default=1024)
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--shard-size", type=int, default=DEFAULT_SHARD_SIZE)
+    parser.add_argument("--max-shard-tokens", type=int, default=DEFAULT_MAX_SHARD_TOKENS)
     parser.add_argument("--hub-repo-id", default=DEFAULT_HUB_REPO_ID)
     parser.add_argument("--hub-repo-type", default=DEFAULT_HUB_REPO_TYPE)
     parser.add_argument("--streaming", action="store_true", help="Stream then materialize rows before multiprocessing tokenization.")
@@ -422,6 +438,7 @@ def main() -> None:
             num_proc=args.num_proc,
             batch_size=args.batch_size,
             shard_size=args.shard_size,
+            max_shard_tokens=args.max_shard_tokens,
             streaming=args.streaming,
             limit=args.limit,
             hub_api=hub_api,
