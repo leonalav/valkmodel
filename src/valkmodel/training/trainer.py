@@ -122,6 +122,12 @@ class ValkTrainer:
             accumulated_loss = 0.0
             token_count = 0
             latest_outputs = None
+            autocast_ctx = (
+                torch.amp.autocast(device_type=self.device.type, dtype=torch.bfloat16)
+                if self.args.bf16 and self.device.type == "cuda"
+                else torch.amp.autocast(device_type=self.device.type, enabled=False)
+            )
+            accumulated_loss_tensor = torch.zeros((), device=self.device)
             for _ in range(self.args.gradient_accumulation_steps):
                 try:
                     batch = next(data_iter)
@@ -130,18 +136,21 @@ class ValkTrainer:
                     batch = next(data_iter)
                 batch = self._move_batch_to_device(batch)
                 token_count += int(batch["input_ids"].numel())
-                outputs = self.model(
-                    input_ids=batch["input_ids"],
-                    labels=batch.get("labels"),
-                    attention_mask=batch.get("attention_mask"),
-                    training_lambdas=self.get_auxiliary_loss_weights(self.global_step),
-                )
+                with autocast_ctx:
+                    outputs = self.model(
+                        input_ids=batch["input_ids"],
+                        labels=batch.get("labels"),
+                        attention_mask=batch.get("attention_mask"),
+                        training_lambdas=self.get_auxiliary_loss_weights(self.global_step),
+                    )
                 latest_outputs = outputs
                 loss = outputs.loss / self.args.gradient_accumulation_steps
                 loss.backward()
-                accumulated_loss += float(loss.detach().cpu())
-            self.last_grad_norm = self._compute_gradient_norm()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.max_grad_norm)
+                accumulated_loss_tensor = accumulated_loss_tensor + loss.detach()
+            accumulated_loss = float(accumulated_loss_tensor.item())
+            self.last_grad_norm = float(
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.max_grad_norm).item()
+            )
             self.optimizer.step()
             self.scheduler.step()
             self.optimizer.zero_grad(set_to_none=True)
@@ -251,13 +260,6 @@ class ValkTrainer:
             return min_ratio + 0.5 * (1.0 - min_ratio) * (1.0 + math.cos(math.pi * progress))
 
         return torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda)
-
-    def _compute_gradient_norm(self) -> float:
-        total = torch.zeros((), device=self.device)
-        for parameter in self.model.parameters():
-            if parameter.grad is not None:
-                total = total + parameter.grad.detach().pow(2).sum()
-        return float(total.sqrt().detach().cpu())
 
     def _log_step(self, loss: float, grad_norm: float, tokens_per_sec: float, outputs: Any) -> None:
         latent_state = getattr(outputs, "latent_state", None)

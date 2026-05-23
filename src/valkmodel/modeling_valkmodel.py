@@ -242,7 +242,11 @@ class ValkModelForCausalLM(ValkModelPreTrainedModel):
         branch_entropy_weight = self.config.branch_entropy_weight if training_lambdas is None else training_lambdas.get("branch_entropy", self.config.branch_entropy_weight)
         if labels is not None:
             ignore_index = self.config.pad_token_id if self.config.pad_token_id is not None else -100
-            if tool_mask is None and input_ids is not None:
+            if tool_mask is None and input_ids is not None and (
+                self.config.tool_call_token_id is not None
+                or self.config.tool_result_token_id is not None
+                or self.config.reasoning_start_token_id is not None
+            ):
                 tool_mask = create_tool_mask(
                     input_ids,
                     tool_call_token_id=self.config.tool_call_token_id,

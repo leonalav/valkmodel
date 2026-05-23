@@ -28,7 +28,7 @@ class LatentStateModule(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         projected = self.input_proj(hidden_states)
         if previous_state is None:
-            previous_state = torch.zeros_like(projected)
+            previous_state = projected.new_zeros(projected.shape)
         if previous_state.shape != projected.shape:
             raise ValueError(
                 "previous_state must have the same batch and sequence shape as hidden_states; "

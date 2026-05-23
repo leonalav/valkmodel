@@ -35,6 +35,17 @@ DEFAULT_HUB_REPO_TYPE = "dataset"
 DEFAULT_SHARD_SIZE = 10_000
 DEFAULT_MAX_SHARD_TOKENS = 8_388_608
 DEFAULT_BATCH_SIZE = 128
+DEFAULT_TOKEN_BUDGET_PLAN = "30b"
+DEFAULT_TOKEN_BUDGETS_30B = {
+    "fineweb_edu": 12_069_000_000,
+    "the_stack_v2": 7_586_000_000,
+    "open_web_math": 4_138_000_000,
+    "culturax_zh": 2_414_000_000,
+    "culturax_en": 1_207_000_000,
+    "culturax_fr": 862_000_000,
+    "culturax_ru": 862_000_000,
+    "culturax_vi": 862_000_000,
+}
 MIN_CHARS = 64
 TEXT_COLUMN = "text"
 _WORKER_TOKENIZER: PreTrainedTokenizerBase | None = None
@@ -229,9 +240,15 @@ def write_all_curriculum_stages(
     eos_token_id: int,
     shard_size: int,
     max_shard_tokens: int,
-) -> None:
+    token_budget: int | None,
+) -> dict[int, int]:
     buffers = {stage: [] for stage in stage_dirs}
     shard_ids = {stage: 0 for stage in stage_dirs}
+    emitted_tokens = {stage: 0 for stage in stage_dirs}
+    token_limits = {
+        stage: None if token_budget is None else (token_budget // stage) * stage
+        for stage in stage_dirs
+    }
     rows_per_shard = {
         stage: max_rows_per_shard(stage, shard_size, max_shard_tokens)
         for stage in stage_dirs
@@ -242,15 +259,26 @@ def write_all_curriculum_stages(
     }
 
     for tokens_batch in token_batches:
+        active_stages = [
+            stage for stage, limit in token_limits.items()
+            if limit is None or emitted_tokens[stage] < limit
+        ]
+        if not active_stages:
+            break
         for tokens in tokens_batch:
-            for stage, buffer in buffers.items():
+            for stage in active_stages:
+                limit = token_limits[stage]
+                if limit is not None and emitted_tokens[stage] >= limit:
+                    continue
+                buffer = buffers[stage]
                 buffer.extend(tokens)
                 buffer.append(eos_token_id)
                 rows = rows_by_stage[stage]
-                while len(buffer) >= stage:
+                while len(buffer) >= stage and (limit is None or emitted_tokens[stage] < limit):
                     rows["input_ids"].append(buffer[:stage])
                     rows["token_count"].append(stage)
                     rows["seq_len"].append(stage)
+                    emitted_tokens[stage] += stage
                     del buffer[:stage]
                     shard_ids[stage] = flush_full_shards(
                         rows,
@@ -259,10 +287,21 @@ def write_all_curriculum_stages(
                         rows_per_shard[stage],
                         shard_ids[stage],
                     )
+            if all(limit is not None and emitted_tokens[stage] >= limit for stage, limit in token_limits.items()):
+                break
 
     for stage, rows in rows_by_stage.items():
         if rows["input_ids"]:
             write_shard(rows, stage_dirs[stage], fmt, shard_ids[stage])
+    return emitted_tokens
+
+
+def resolve_token_budget(spec_name: str, token_budget_plan: str) -> int | None:
+    if token_budget_plan == "none":
+        return None
+    if token_budget_plan == "30b":
+        return DEFAULT_TOKEN_BUDGETS_30B.get(spec_name)
+    raise ValueError(f"Unknown token budget plan: {token_budget_plan}")
 
 
 def hub_path_exists(api: HfApi, repo_id: str, repo_type: str, path_in_repo: str) -> bool:
@@ -325,6 +364,7 @@ def tokenize_spec(
     batch_size: int,
     shard_size: int,
     max_shard_tokens: int,
+    token_budget_plan: str,
     streaming: bool,
     limit: int | None,
     hub_api: HfApi,
@@ -375,15 +415,23 @@ def tokenize_spec(
                 pending_stage_dirs[stage] = stage_dir
 
         if pending_stage_dirs:
+            token_budget = resolve_token_budget(spec.name, token_budget_plan)
+            if token_budget is None:
+                print(f"{spec.name}: token budget disabled")
+            else:
+                print(f"{spec.name}: token budget {token_budget:,} tokens per pending stage")
             token_batches = iter_tokenized_batches(prepared, tokenizer, tokenizer_name_or_path, spec.name, batch_size, num_proc)
-            write_all_curriculum_stages(
+            emitted_tokens = write_all_curriculum_stages(
                 token_batches,
                 pending_stage_dirs,
                 spec.output_format,
                 tokenizer.eos_token_id,
                 shard_size,
                 max_shard_tokens,
+                token_budget,
             )
+            for stage, tokens in emitted_tokens.items():
+                print(f"{spec.name} seq_{stage}: emitted {tokens:,} tokens")
             for stage_dir in pending_stage_dirs.values():
                 success_marker(stage_dir).write_text("ok\n", encoding="utf-8")
             gc.collect()
@@ -417,6 +465,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--shard-size", type=int, default=DEFAULT_SHARD_SIZE)
     parser.add_argument("--max-shard-tokens", type=int, default=DEFAULT_MAX_SHARD_TOKENS)
+    parser.add_argument("--token-budget-plan", choices=("30b", "none"), default=DEFAULT_TOKEN_BUDGET_PLAN)
     parser.add_argument("--hub-repo-id", default=DEFAULT_HUB_REPO_ID)
     parser.add_argument("--hub-repo-type", default=DEFAULT_HUB_REPO_TYPE)
     parser.add_argument("--streaming", action="store_true", help="Stream then materialize rows before multiprocessing tokenization.")
@@ -457,6 +506,7 @@ def main() -> None:
             batch_size=args.batch_size,
             shard_size=args.shard_size,
             max_shard_tokens=args.max_shard_tokens,
+            token_budget_plan=args.token_budget_plan,
             streaming=args.streaming,
             limit=args.limit,
             hub_api=hub_api,

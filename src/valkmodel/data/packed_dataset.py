@@ -86,7 +86,7 @@ def pack_documents(
             tokens.append(separator_token_id)
             doc_ids.append(-1)
 
-    if tokens:
+    if tokens and len(tokens) == max_seq_len:
         _append_pack(packs, tokens, doc_ids, boundaries, max_seq_len, pad_token_id)
     if not packs:
         packs.append(_empty_pack(max_seq_len, pad_token_id))
