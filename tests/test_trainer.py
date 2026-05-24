@@ -61,7 +61,7 @@ def test_trainer_initializes_optimizer_groups_and_scheduler(tmp_path):
 
 
 def test_auxiliary_loss_warmup_schedules_reach_targets(tmp_path):
-    model = ValkModelForCausalLM(tiny_config(use_latent_state=True, use_jepa=True, latent_state_layers=[0], use_latent_branching=True, latent_branching_layers=[0]))
+    model = ValkModelForCausalLM(tiny_config(use_latent_state=True, use_jepa=True, latent_state_layers=[0], use_latent_branching=True, enable_unstable_latent_branching=True, latent_branching_layers=[0]))
     args = TrainingArguments(
         num_training_steps=4,
         batch_size=2,
@@ -139,7 +139,7 @@ def test_trainer_evaluation_loop_returns_finite_metrics_and_restores_train_mode(
 
 
 def test_trainer_log_step_records_health_metrics_and_prints_on_log_boundary(tmp_path, capsys):
-    model = ValkModelForCausalLM(tiny_config(use_latent_state=True, latent_state_layers=[0], use_jepa=True, use_latent_branching=True, latent_branching_layers=[0]))
+    model = ValkModelForCausalLM(tiny_config(use_latent_state=True, latent_state_layers=[0], use_jepa=True, use_latent_branching=True, enable_unstable_latent_branching=True, latent_branching_layers=[0]))
     args = TrainingArguments(num_training_steps=1, batch_size=2, log_steps=1, checkpoint_dir=str(tmp_path), device="cpu", jepa_warmup_steps=0, branch_warmup_steps=0)
     trainer = ValkTrainer(model=model, train_dataset=TinyTokenDataset(), args=args)
     trainer.global_step = 1

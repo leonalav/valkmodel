@@ -36,13 +36,13 @@ def test_latent_state_module_returns_residual_and_noncollapsed_state():
     assert state.var() > 1e-8
 
 
-def test_latent_state_module_uses_previous_state():
+def test_latent_state_module_uses_boundary_previous_state():
     torch.manual_seed(0)
     module = LatentStateModule(hidden_size=64, latent_state_dim=32, init_scale=0.02)
     hidden_states = torch.randn(2, 5, 64)
     _, first_state = module(hidden_states)
 
-    _, continued_state = module(hidden_states, previous_state=first_state)
+    _, continued_state = module(hidden_states, previous_state=first_state[:, -1])
 
     assert not torch.allclose(first_state, continued_state)
 
@@ -62,7 +62,7 @@ def test_model_threads_latent_state_and_backpropagates_through_it():
     assert all(torch.isfinite(grad).all() for grad in latent_grads)
 
 
-def test_latent_state_rejects_incremental_cache_shape_until_cache_support_exists():
+def test_latent_state_rejects_invalid_previous_state_shape():
     module = LatentStateModule(hidden_size=64, latent_state_dim=32, init_scale=0.02)
     hidden_states = torch.randn(2, 1, 64)
     previous_state = torch.randn(2, 5, 32)
@@ -70,6 +70,6 @@ def test_latent_state_rejects_incremental_cache_shape_until_cache_support_exists
     try:
         module(hidden_states, previous_state=previous_state)
     except ValueError as exc:
-        assert "same batch and sequence shape" in str(exc)
+        assert "previous_state must have shape" in str(exc)
     else:
         raise AssertionError("expected ValueError")

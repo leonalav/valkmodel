@@ -91,7 +91,7 @@ class ValkModelBlock(nn.Module):
                 config.branch_selection_mode,
                 config.latent_branching_init_scale,
             )
-            if config.use_latent_branching and layer_idx in branching_layers
+            if config.use_latent_branching and config.enable_unstable_latent_branching and layer_idx in branching_layers
             else None
         )
 

@@ -66,7 +66,8 @@ class ValkModelConfig(PretrainedConfig):
         jepa_ema_momentum: float = 0.996,
         jepa_min_horizon: int = 1,
         jepa_max_horizon: int = 16,
-        jepa_loss_weight: float = 0.1,
+        jepa_loss_weight: float = 0.02,
+        jepa_warmup_steps: int = 2000,
         jepa_init_scale: float = 0.02,
         max_training_seq_len: int | None = None,
         chunk_size: int = 2048,
@@ -84,6 +85,7 @@ class ValkModelConfig(PretrainedConfig):
         branch_entropy_weight: float = 0.0,
         branch_value_loss_weight: float = 0.0,
         latent_branching_init_scale: float = 0.02,
+        enable_unstable_latent_branching: bool = False,
         **kwargs,
     ):
         self.attn_mode = attn_mode
@@ -121,6 +123,7 @@ class ValkModelConfig(PretrainedConfig):
         self.jepa_min_horizon = jepa_min_horizon
         self.jepa_max_horizon = jepa_max_horizon
         self.jepa_loss_weight = jepa_loss_weight
+        self.jepa_warmup_steps = jepa_warmup_steps
         self.jepa_init_scale = jepa_init_scale
         self.max_training_seq_len = max_training_seq_len if max_training_seq_len is not None else max_position_embeddings
         self.chunk_size = chunk_size
@@ -139,6 +142,7 @@ class ValkModelConfig(PretrainedConfig):
         self.branch_entropy_weight = branch_entropy_weight
         self.branch_value_loss_weight = branch_value_loss_weight
         self.latent_branching_init_scale = latent_branching_init_scale
+        self.enable_unstable_latent_branching = enable_unstable_latent_branching
 
         self.key_dim = self.num_heads * self.head_dim
         self.head_v_dim = int(self.head_dim * self.expand_v)
@@ -173,7 +177,7 @@ class ValkModelConfig(PretrainedConfig):
             latent = len(latent_layers) * self._estimate_latent_state_parameters()
         jepa = self._estimate_jepa_parameters() if self.use_jepa else 0
         branching = 0
-        if self.use_latent_branching:
+        if self.use_latent_branching and self.enable_unstable_latent_branching:
             branching_layers = self.latent_branching_layers if self.latent_branching_layers is not None else [self.num_hidden_layers // 2]
             branching = len(branching_layers) * self._estimate_latent_branching_parameters()
         return int(embedding + layers + output + latent + jepa + branching)
@@ -193,18 +197,21 @@ class ValkModelConfig(PretrainedConfig):
         )
 
     def _estimate_latent_state_parameters(self) -> int:
+        recurrent_gate = (self.hidden_size + self.latent_state_dim) * self.latent_state_dim + self.latent_state_dim
         return int(
             self.hidden_size * self.latent_state_dim
             + self.latent_state_dim * self.latent_state_dim
-            + (self.hidden_size + self.latent_state_dim) * self.latent_state_dim
-            + self.latent_state_dim
+            + recurrent_gate
+            + recurrent_gate
             + self.latent_state_dim * self.hidden_size
         )
 
     def _estimate_jepa_parameters(self) -> int:
+        predictor = self.jepa_hidden_dim * (4 * self.jepa_hidden_dim) + (4 * self.jepa_hidden_dim)
+        predictor += (4 * self.jepa_hidden_dim) * self.jepa_hidden_dim
         return int(
             self.latent_state_dim * self.jepa_hidden_dim
-            + self.jepa_hidden_dim * self.jepa_hidden_dim
+            + predictor
             + self.latent_state_dim * self.jepa_hidden_dim
         )
 
@@ -218,8 +225,8 @@ class ValkModelConfig(PretrainedConfig):
     def _validate_geometry(self) -> None:
         if self.attn_mode not in {"chunk", "fused_recurrent"}:
             raise ValueError("attn_mode must be 'chunk' or 'fused_recurrent'")
-        if self.gdn_backend not in {"auto", "naive", "fla"}:
-            raise ValueError("gdn_backend must be 'auto', 'naive', or 'fla'")
+        if self.gdn_backend not in {"auto", "fla"}:
+            raise ValueError("gdn_backend must be 'auto' or 'fla'")
         if self.use_gate and self.num_heads * self.head_dim != int(0.75 * self.hidden_size):
             raise ValueError("num_heads * head_dim must equal 0.75 * hidden_size when use_gate=True")
         if self.num_v_heads > self.num_heads and self.num_v_heads % self.num_heads != 0:
@@ -252,6 +259,8 @@ class ValkModelConfig(PretrainedConfig):
             raise ValueError("jepa horizon range must be positive and ordered")
         if self.jepa_loss_weight < 0:
             raise ValueError("jepa_loss_weight must be nonnegative")
+        if self.jepa_warmup_steps < 0:
+            raise ValueError("jepa_warmup_steps must be nonnegative")
         if self.max_training_seq_len <= 0 or self.max_training_seq_len > self.max_position_embeddings:
             raise ValueError("max_training_seq_len must be positive and no larger than max_position_embeddings")
         if self.chunk_size <= 0:
@@ -260,6 +269,11 @@ class ValkModelConfig(PretrainedConfig):
             raise ValueError("document_separator_token_id must be None or in [0, vocab_size)")
         if self.latent_state_dim <= 0:
             raise ValueError("latent_state_dim must be positive")
+        if self.use_latent_branching and not self.enable_unstable_latent_branching:
+            raise ValueError(
+                "use_latent_branching is disabled for mathematical-fidelity stabilization. "
+                "Set enable_unstable_latent_branching=True only for controlled branch-router experiments."
+            )
         if self.use_latent_branching and not self.use_latent_state:
             raise ValueError("use_latent_branching requires use_latent_state=True")
         if self.num_branches < 2:

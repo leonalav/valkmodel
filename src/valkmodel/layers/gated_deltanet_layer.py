@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -67,7 +69,12 @@ class GatedDeltaNetLayer(nn.Module):
         if mode not in {"chunk", "fused_recurrent"}:
             raise ValueError("mode must be 'chunk' or 'fused_recurrent'")
         self.mode = mode
-        self.backend = "fla"
+        self.backend = "fla" if backend == "auto" else backend
+        if self.backend != "fla":
+            raise NotImplementedError(
+                "Only the FLA Gated DeltaNet backend is mathematically implemented in this layer. "
+                "The earlier naive backend option is not a faithful reference implementation."
+            )
         self.hidden_size = hidden_size
         self.expand_v = expand_v
         self.head_dim = head_dim
@@ -84,9 +91,16 @@ class GatedDeltaNetLayer(nn.Module):
         self.v_proj = nn.Linear(hidden_size, self.value_dim, bias=False)
         self.a_proj = nn.Linear(hidden_size, num_v_heads, bias=False)
         self.b_proj = nn.Linear(hidden_size, num_v_heads, bias=False)
-        self.A_log = nn.Parameter(torch.zeros(num_v_heads))
+        A = torch.empty(num_v_heads, dtype=torch.float32).uniform_(0, 16)
+        self.A_log = nn.Parameter(torch.log(A))
         self.A_log._no_weight_decay = True
-        self.dt_bias = nn.Parameter(torch.full((num_v_heads,), -4.0))
+        dt_min = 0.001
+        dt_max = 0.1
+        dt_floor = 1e-4
+        dt = torch.exp(torch.rand(num_v_heads, dtype=torch.float32) * (math.log(dt_max) - math.log(dt_min)) + math.log(dt_min))
+        dt = torch.clamp(dt, min=dt_floor)
+        inv_dt = dt + torch.log(-torch.expm1(-dt))
+        self.dt_bias = nn.Parameter(inv_dt)
         self.dt_bias._no_weight_decay = True
 
         if use_short_conv:
@@ -122,6 +136,12 @@ class GatedDeltaNetLayer(nn.Module):
         past_key_values: object | None = None,
         use_cache: bool = False,
     ) -> tuple[torch.Tensor, object | None]:
+        if attention_mask is not None and not attention_mask.to(dtype=torch.bool).all():
+            raise ValueError(
+                "GatedDeltaNetLayer does not support padded attention_mask values yet. "
+                "Padding would update the recurrent GDN state as real tokens; pass dense sequences "
+                "or implement reference-style unpadding/cu_seqlens first."
+            )
         q, k, v = self._project_inputs(hidden_states)
         batch_size, seq_len, _ = hidden_states.shape
         q = F.normalize(q.view(batch_size, seq_len, self.num_heads, self.head_dim), dim=-1)
@@ -144,7 +164,7 @@ class GatedDeltaNetLayer(nn.Module):
         )
         if self.use_gate:
             g = self.g_proj(hidden_states).view(batch_size, seq_len, self.num_v_heads, self.head_v_dim)
-            o = self.o_norm(o) * torch.sigmoid(g)
+            o = self.o_norm(o * F.silu(g))
         else:
             o = self.o_norm(o)
         return self.o_proj(o.reshape(batch_size, seq_len, self.value_dim)), recurrent_state if use_cache else None

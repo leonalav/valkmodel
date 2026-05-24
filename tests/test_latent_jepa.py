@@ -4,6 +4,10 @@ from valkmodel.layers.latent_jepa import JEPAModule
 from valkmodel.utils.jepa_utils import compute_jepa_metrics, compute_normalized_mse, create_jepa_pairs
 
 
+def predictor_linear_grads(module: JEPAModule):
+    return [submodule.weight.grad for submodule in module.predictor if isinstance(submodule, torch.nn.Linear)]
+
+
 def test_create_jepa_pairs_uses_per_position_horizons_and_masks_invalid_targets():
     latent = torch.arange(1 * 5 * 2, dtype=torch.float32).view(1, 5, 2)
     horizons = torch.tensor([[1, 2, 1, 2, 1]])
@@ -39,6 +43,8 @@ def test_jepa_metrics_report_variance_and_cosine_on_active_pairs():
     assert metrics["prediction_variance"] > 0
     assert metrics["target_variance"] == 0
     assert torch.allclose(metrics["cosine_mean"], torch.tensor(0.5))
+    assert metrics["target_collapsed"]
+    assert not metrics["prediction_collapsed"]
 
 
 def test_jepa_module_returns_finite_loss_metrics_and_blocks_target_gradients():
@@ -56,7 +62,7 @@ def test_jepa_module_returns_finite_loss_metrics_and_blocks_target_gradients():
     assert torch.isfinite(metrics["prediction_variance"])
     assert torch.isfinite(metrics["target_variance"])
     assert module.context_encoder.weight.grad is not None
-    assert module.predictor.weight.grad is not None
+    assert all(grad is not None for grad in predictor_linear_grads(module))
     assert module.target_encoder.weight.grad is None
     assert current.grad is not None
 

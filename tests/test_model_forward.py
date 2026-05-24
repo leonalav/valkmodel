@@ -79,52 +79,31 @@ def test_causal_lm_loss_ignores_pad_tokens():
     assert torch.allclose(outputs.loss, expected)
 
 
-def test_config_attn_mode_reaches_gated_deltanet_layers_with_explicit_fallback_semantics():
-    model = ValkModelForCausalLM(tiny_config(attn_mode="fused_recurrent", gdn_backend="naive"))
+def test_config_rejects_unimplemented_naive_gdn_backend():
+    try:
+        tiny_config(gdn_backend="naive")
+    except ValueError as exc:
+        assert "gdn_backend must be 'auto' or 'fla'" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_config_attn_mode_reaches_gated_deltanet_layers_with_fla_backend():
+    model = ValkModelForCausalLM(tiny_config(attn_mode="fused_recurrent", gdn_backend="fla", require_fla=True))
 
     assert all(layer.attn.mode == "fused_recurrent" for layer in model.model.layers)
-    assert all(layer.attn.uses_naive_fallback for layer in model.model.layers)
-    assert all(layer.attn.backend == "naive" for layer in model.model.layers)
-
-
-def test_naive_gated_deltanet_cache_threads_through_model_outputs():
-    torch.manual_seed(0)
-    model = ValkModelForCausalLM(tiny_config(gdn_backend="naive", use_cache=True))
-    input_ids = torch.randint(0, model.config.vocab_size, (2, 5))
-
-    outputs = model(input_ids=input_ids, use_cache=True)
-
-    assert isinstance(outputs.past_key_values, tuple)
-    assert len(outputs.past_key_values) == model.config.num_hidden_layers
-    for layer_cache in outputs.past_key_values:
-        assert layer_cache.shape == (2, model.config.num_v_heads, model.config.head_v_dim)
-        assert torch.isfinite(layer_cache).all()
-
-
-def test_model_accepts_past_key_values_for_incremental_naive_forward():
-    torch.manual_seed(0)
-    model = ValkModelForCausalLM(tiny_config(gdn_backend="naive", use_cache=True))
-    prefix_ids = torch.randint(0, model.config.vocab_size, (2, 4))
-    next_ids = torch.randint(0, model.config.vocab_size, (2, 1))
-    prefix_outputs = model(input_ids=prefix_ids, use_cache=True)
-
-    outputs = model(input_ids=next_ids, past_key_values=prefix_outputs.past_key_values, use_cache=True)
-
-    assert outputs.logits.shape == (2, 1, model.config.vocab_size)
-    assert isinstance(outputs.past_key_values, tuple)
-    assert len(outputs.past_key_values) == model.config.num_hidden_layers
-    assert torch.isfinite(outputs.logits).all()
+    assert all(layer.attn.backend == "fla" for layer in model.model.layers)
 
 
 def test_fla_backend_requires_installed_dependency_when_requested():
     config = tiny_config(gdn_backend="fla", require_fla=True)
 
     try:
-        ValkModelForCausalLM(config)
+        model = ValkModelForCausalLM(config)
     except ImportError as exc:
         assert "flash-linear-attention" in str(exc) or "fla" in str(exc)
     else:
-        assert all(layer.attn.backend == "fla" for layer in ValkModelForCausalLM(config).model.layers)
+        assert all(layer.attn.backend == "fla" for layer in model.model.layers)
 
 
 def test_jepa_loss_is_added_only_in_training_mode():
@@ -150,7 +129,7 @@ def test_jepa_loss_is_added_only_in_training_mode():
     assert train_outputs.jepa_metrics is not None
     assert train_outputs.loss > train_outputs.jepa_loss * config.jepa_loss_weight
     assert model.jepa_module.context_encoder.weight.grad is not None
-    assert model.jepa_module.predictor.weight.grad is not None
+    assert all(child.weight.grad is not None for child in model.jepa_module.predictor if isinstance(child, torch.nn.Linear))
     assert model.jepa_module.target_encoder.weight.grad is None
 
     model.eval()
@@ -190,6 +169,7 @@ def test_branch_entropy_regularization_reduces_training_loss_only():
         latent_state_dim=32,
         latent_state_layers=[0],
         use_latent_branching=True,
+        enable_unstable_latent_branching=True,
         latent_branching_layers=[0],
         num_branches=3,
         branch_diversity_weight=0.0,
@@ -200,6 +180,7 @@ def test_branch_entropy_regularization_reduces_training_loss_only():
         latent_state_dim=32,
         latent_state_layers=[0],
         use_latent_branching=True,
+        enable_unstable_latent_branching=True,
         latent_branching_layers=[0],
         num_branches=3,
         branch_diversity_weight=0.0,
@@ -234,6 +215,7 @@ def test_latent_branching_metrics_and_loss_are_training_only():
         latent_state_dim=32,
         latent_state_layers=[0],
         use_latent_branching=True,
+        enable_unstable_latent_branching=True,
         latent_branching_layers=[0],
         num_branches=3,
         branch_diversity_weight=0.5,

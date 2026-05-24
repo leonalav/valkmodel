@@ -23,7 +23,11 @@ class JEPAModule(nn.Module):
         self.jepa_hidden_dim = jepa_hidden_dim
         self.ema_momentum = ema_momentum
         self.context_encoder = nn.Linear(latent_state_dim, jepa_hidden_dim, bias=False)
-        self.predictor = nn.Linear(jepa_hidden_dim, jepa_hidden_dim, bias=False)
+        self.predictor = nn.Sequential(
+            nn.Linear(jepa_hidden_dim, 4 * jepa_hidden_dim, bias=True),
+            nn.SiLU(),
+            nn.Linear(4 * jepa_hidden_dim, jepa_hidden_dim, bias=False),
+        )
         self.target_encoder = nn.Linear(latent_state_dim, jepa_hidden_dim, bias=False)
         self.reset_parameters(init_scale)
         for parameter in self.target_encoder.parameters():
@@ -31,7 +35,11 @@ class JEPAModule(nn.Module):
 
     def reset_parameters(self, init_scale: float) -> None:
         nn.init.normal_(self.context_encoder.weight, mean=0.0, std=init_scale)
-        nn.init.normal_(self.predictor.weight, mean=0.0, std=init_scale)
+        for module in self.predictor:
+            if isinstance(module, nn.Linear):
+                nn.init.normal_(module.weight, mean=0.0, std=init_scale)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
         self.target_encoder.weight.data.copy_(self.context_encoder.weight.data)
 
     def forward(

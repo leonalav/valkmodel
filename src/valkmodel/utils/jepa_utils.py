@@ -49,17 +49,29 @@ def compute_jepa_metrics(
     targets: torch.Tensor,
     mask: torch.Tensor,
     eps: float = 1e-6,
+    collapse_variance_threshold: float = 1e-4,
 ) -> dict[str, torch.Tensor]:
     active = mask.to(dtype=torch.bool)
     if not active.any():
         zero = predictions.sum() * 0
-        return {"prediction_variance": zero, "target_variance": zero, "cosine_mean": zero}
+        false_flag = torch.zeros((), dtype=torch.bool, device=predictions.device)
+        return {
+            "prediction_variance": zero,
+            "target_variance": zero,
+            "cosine_mean": zero,
+            "prediction_collapsed": false_flag,
+            "target_collapsed": false_flag,
+        }
     pred = predictions[active]
     target = targets[active]
     pred_norm = F.normalize(pred, dim=-1, eps=eps)
     target_norm = F.normalize(target, dim=-1, eps=eps)
+    prediction_variance = pred.var(dim=0, unbiased=False).mean()
+    target_variance = target.var(dim=0, unbiased=False).mean()
     return {
-        "prediction_variance": pred.var(dim=0, unbiased=False).mean(),
-        "target_variance": target.var(dim=0, unbiased=False).mean(),
+        "prediction_variance": prediction_variance,
+        "target_variance": target_variance,
         "cosine_mean": (pred_norm * target_norm).sum(dim=-1).mean(),
+        "prediction_collapsed": prediction_variance < collapse_variance_threshold,
+        "target_collapsed": target_variance < collapse_variance_threshold,
     }
