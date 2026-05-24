@@ -61,15 +61,15 @@ def test_ddp_trainer_converts_existing_trainer_and_wraps_model(monkeypatch, tmp_
     fake_ddp_environment(monkeypatch, rank="0", local_rank="1", world_size="2")
     monkeypatch.setattr(torch.nn.parallel, "DistributedDataParallel", FakeDDP)
     base = ValkTrainer(
-        model=ValkModelForCausalLM(tiny_config()),
+        model=ValkModelForCausalLM(tiny_config()).cuda(),
         train_dataset=TinyTokenDataset(),
-        args=TrainingArguments(num_training_steps=1, batch_size=2, checkpoint_dir=str(tmp_path), device="cpu"),
+        args=TrainingArguments(num_training_steps=1, batch_size=2, checkpoint_dir=str(tmp_path), device="cuda"),
     )
 
     trainer = DDPValkTrainer.from_trainer(base)
 
     assert isinstance(trainer.model, FakeDDP)
-    assert trainer.model.device_ids is None
+    assert trainer.model.device_ids == [1]
     assert trainer.rank == 0
     assert trainer.local_rank == 1
     assert trainer.world_size == 2
@@ -79,9 +79,9 @@ def test_ddp_trainer_uses_distributed_sampler_for_map_style_dataset(monkeypatch,
     fake_ddp_environment(monkeypatch)
     monkeypatch.setattr(torch.nn.parallel, "DistributedDataParallel", FakeDDP)
     base = ValkTrainer(
-        model=ValkModelForCausalLM(tiny_config()),
+        model=ValkModelForCausalLM(tiny_config()).cuda(),
         train_dataset=TinyTokenDataset(length=8),
-        args=TrainingArguments(num_training_steps=1, batch_size=2, checkpoint_dir=str(tmp_path), device="cpu"),
+        args=TrainingArguments(num_training_steps=1, batch_size=2, checkpoint_dir=str(tmp_path), device="cuda"),
     )
 
     trainer = DDPValkTrainer.from_trainer(base)
@@ -95,10 +95,10 @@ def test_ddp_trainer_preserves_injected_dataloader(monkeypatch, tmp_path):
     monkeypatch.setattr(torch.nn.parallel, "DistributedDataParallel", FakeDDP)
     train_loader = DataLoader(TinyTokenDataset(length=2), batch_size=1)
     base = ValkTrainer(
-        model=ValkModelForCausalLM(tiny_config()),
+        model=ValkModelForCausalLM(tiny_config()).cuda(),
         train_dataset=None,
         train_dataloader=train_loader,
-        args=TrainingArguments(num_training_steps=1, batch_size=1, checkpoint_dir=str(tmp_path), device="cpu"),
+        args=TrainingArguments(num_training_steps=1, batch_size=1, checkpoint_dir=str(tmp_path), device="cuda"),
     )
 
     trainer = DDPValkTrainer.from_trainer(base)
@@ -110,13 +110,13 @@ def test_ddp_trainer_rank_zero_guards_checkpoint_and_logging(monkeypatch, tmp_pa
     fake_ddp_environment(monkeypatch, rank="1", local_rank="1", world_size="2")
     monkeypatch.setattr(torch.nn.parallel, "DistributedDataParallel", FakeDDP)
     base = ValkTrainer(
-        model=ValkModelForCausalLM(tiny_config()),
+        model=ValkModelForCausalLM(tiny_config()).cuda(),
         train_dataset=TinyTokenDataset(),
-        args=TrainingArguments(num_training_steps=1, batch_size=2, log_steps=1, checkpoint_dir=str(tmp_path), device="cpu"),
+        args=TrainingArguments(num_training_steps=1, batch_size=2, log_steps=1, checkpoint_dir=str(tmp_path), device="cuda"),
     )
     trainer = DDPValkTrainer.from_trainer(base)
     trainer.global_step = 1
-    outputs = types.SimpleNamespace(logits=torch.zeros(2, 6, trainer.unwrap_model().config.vocab_size), latent_state=None, jepa_loss=None, jepa_metrics=None, branch_metrics=None)
+    outputs = types.SimpleNamespace(logits=torch.zeros(2, 6, trainer.unwrap_model().config.vocab_size, device="cuda"), latent_state=None, jepa_loss=None, jepa_metrics=None, branch_metrics=None)
 
     trainer.save_checkpoint(str(tmp_path / "rank_1_checkpoint"))
     trainer._log_step(2.0, 0.5, 123.0, outputs)

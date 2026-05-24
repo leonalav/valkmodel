@@ -46,7 +46,7 @@ class ValkModelConfig(PretrainedConfig):
         vocab_size: int = 32_000,
         initializer_range: float = 0.02,
         use_cache: bool = True,
-        gdn_backend: str = "auto",
+        gdn_backend: str = "fla",
         require_fla: bool = False,
         pad_token_id: int | None = None,
         bos_token_id: int = 1,
@@ -225,8 +225,8 @@ class ValkModelConfig(PretrainedConfig):
     def _validate_geometry(self) -> None:
         if self.attn_mode not in {"chunk", "fused_recurrent"}:
             raise ValueError("attn_mode must be 'chunk' or 'fused_recurrent'")
-        if self.gdn_backend not in {"auto", "fla"}:
-            raise ValueError("gdn_backend must be 'auto' or 'fla'")
+        if self.gdn_backend != "fla":
+            raise ValueError("gdn_backend must be 'fla'")
         if self.use_gate and self.num_heads * self.head_dim != int(0.75 * self.hidden_size):
             raise ValueError("num_heads * head_dim must equal 0.75 * hidden_size when use_gate=True")
         if self.num_v_heads > self.num_heads and self.num_v_heads % self.num_heads != 0:

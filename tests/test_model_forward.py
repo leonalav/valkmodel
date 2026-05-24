@@ -22,8 +22,8 @@ def tiny_config(**overrides):
 
 def test_causal_lm_forward_returns_finite_shifted_loss_and_logits():
     torch.manual_seed(0)
-    model = ValkModelForCausalLM(tiny_config())
-    input_ids = torch.randint(0, model.config.vocab_size, (2, 7))
+    model = ValkModelForCausalLM(tiny_config()).cuda()
+    input_ids = torch.randint(0, model.config.vocab_size, (2, 7), device="cuda")
 
     outputs = model(input_ids=input_ids, labels=input_ids)
 
@@ -35,8 +35,8 @@ def test_causal_lm_forward_returns_finite_shifted_loss_and_logits():
 
 def test_causal_lm_backward_produces_finite_gradients():
     torch.manual_seed(0)
-    model = ValkModelForCausalLM(tiny_config())
-    input_ids = torch.randint(0, model.config.vocab_size, (2, 7))
+    model = ValkModelForCausalLM(tiny_config()).cuda()
+    input_ids = torch.randint(0, model.config.vocab_size, (2, 7), device="cuda")
 
     loss = model(input_ids=input_ids, labels=input_ids).loss
     loss.backward()
@@ -47,8 +47,8 @@ def test_causal_lm_backward_produces_finite_gradients():
 
 
 def test_causal_lm_rejects_input_ids_and_inputs_embeds_together():
-    model = ValkModelForCausalLM(tiny_config())
-    input_ids = torch.randint(0, model.config.vocab_size, (1, 4))
+    model = ValkModelForCausalLM(tiny_config()).cuda()
+    input_ids = torch.randint(0, model.config.vocab_size, (1, 4), device="cuda")
     inputs_embeds = model.model.embeddings(input_ids)
 
     try:
@@ -62,8 +62,8 @@ def test_causal_lm_rejects_input_ids_and_inputs_embeds_together():
 def test_causal_lm_loss_ignores_pad_tokens():
     torch.manual_seed(0)
     config = tiny_config(pad_token_id=0)
-    model = ValkModelForCausalLM(config)
-    input_ids = torch.tensor([[5, 6, 7, 8], [5, 6, 7, 8]])
+    model = ValkModelForCausalLM(config).cuda()
+    input_ids = torch.tensor([[5, 6, 7, 8], [5, 6, 7, 8]], device="cuda")
     labels = input_ids.clone()
     labels[1, 2:] = config.pad_token_id
 
@@ -83,13 +83,13 @@ def test_config_rejects_unimplemented_naive_gdn_backend():
     try:
         tiny_config(gdn_backend="naive")
     except ValueError as exc:
-        assert "gdn_backend must be 'auto' or 'fla'" in str(exc)
+        assert "gdn_backend must be 'fla'" in str(exc)
     else:
         raise AssertionError("expected ValueError")
 
 
 def test_config_attn_mode_reaches_gated_deltanet_layers_with_fla_backend():
-    model = ValkModelForCausalLM(tiny_config(attn_mode="fused_recurrent", gdn_backend="fla", require_fla=True))
+    model = ValkModelForCausalLM(tiny_config(attn_mode="fused_recurrent", gdn_backend="fla", require_fla=True)).cuda()
 
     assert all(layer.attn.mode == "fused_recurrent" for layer in model.model.layers)
     assert all(layer.attn.backend == "fla" for layer in model.model.layers)
@@ -99,7 +99,7 @@ def test_fla_backend_requires_installed_dependency_when_requested():
     config = tiny_config(gdn_backend="fla", require_fla=True)
 
     try:
-        model = ValkModelForCausalLM(config)
+        model = ValkModelForCausalLM(config).cuda()
     except ImportError as exc:
         assert "flash-linear-attention" in str(exc) or "fla" in str(exc)
     else:
@@ -118,8 +118,8 @@ def test_jepa_loss_is_added_only_in_training_mode():
         jepa_max_horizon=2,
         jepa_loss_weight=0.25,
     )
-    model = ValkModelForCausalLM(config)
-    input_ids = torch.randint(0, config.vocab_size, (2, 6))
+    model = ValkModelForCausalLM(config).cuda()
+    input_ids = torch.randint(0, config.vocab_size, (2, 6), device="cuda")
 
     model.train()
     train_outputs = model(input_ids=input_ids, labels=input_ids)
@@ -150,7 +150,7 @@ def test_jepa_target_encoder_updates_only_when_explicitly_requested():
         jepa_hidden_dim=16,
         jepa_ema_momentum=0.95,
     )
-    model = ValkModelForCausalLM(config)
+    model = ValkModelForCausalLM(config).cuda()
     original = model.jepa_module.target_encoder.weight.detach().clone()
     with torch.no_grad():
         model.jepa_module.context_encoder.weight.add_(1.0)
@@ -186,10 +186,10 @@ def test_branch_entropy_regularization_reduces_training_loss_only():
         branch_diversity_weight=0.0,
         branch_entropy_weight=0.25,
     )
-    base_model = ValkModelForCausalLM(base_config)
-    entropy_model = ValkModelForCausalLM(entropy_config)
+    base_model = ValkModelForCausalLM(base_config).cuda()
+    entropy_model = ValkModelForCausalLM(entropy_config).cuda()
     entropy_model.load_state_dict(base_model.state_dict())
-    input_ids = torch.randint(0, base_config.vocab_size, (2, 6))
+    input_ids = torch.randint(0, base_config.vocab_size, (2, 6), device="cuda")
 
     base_model.train()
     entropy_model.train()
@@ -220,8 +220,8 @@ def test_latent_branching_metrics_and_loss_are_training_only():
         num_branches=3,
         branch_diversity_weight=0.5,
     )
-    model = ValkModelForCausalLM(config)
-    input_ids = torch.randint(0, config.vocab_size, (2, 6))
+    model = ValkModelForCausalLM(config).cuda()
+    input_ids = torch.randint(0, config.vocab_size, (2, 6), device="cuda")
 
     model.train()
     train_outputs = model(input_ids=input_ids, labels=input_ids)

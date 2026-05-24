@@ -49,8 +49,8 @@ def test_latent_state_module_uses_boundary_previous_state():
 
 def test_model_threads_latent_state_and_backpropagates_through_it():
     torch.manual_seed(0)
-    model = ValkModelForCausalLM(tiny_latent_config())
-    input_ids = torch.randint(0, model.config.vocab_size, (2, 6))
+    model = ValkModelForCausalLM(tiny_latent_config()).cuda()
+    input_ids = torch.randint(0, model.config.vocab_size, (2, 6), device="cuda")
 
     outputs = model(input_ids=input_ids, labels=input_ids)
     outputs.loss.backward()

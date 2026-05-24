@@ -16,7 +16,7 @@ def tiny_config(**overrides):
         "intermediate_size": 128,
         "max_position_embeddings": 128,
         "use_short_conv": True,
-        "gdn_backend": "naive",
+        "gdn_backend": "fla",
     }
     values.update(overrides)
     return ValkModelConfig(**values)
@@ -96,8 +96,8 @@ def test_compute_weighted_lm_loss_applies_shifted_tool_weights_and_ignore_index(
 def test_model_uses_explicit_tool_mask_for_weighted_loss():
     torch.manual_seed(0)
     config = tiny_config(tool_loss_weight=4.0)
-    model = ValkModelForCausalLM(config)
-    input_ids = torch.randint(0, config.vocab_size, (2, 6))
+    model = ValkModelForCausalLM(config).cuda()
+    input_ids = torch.randint(0, config.vocab_size, (2, 6), device="cuda")
     tool_mask = torch.zeros_like(input_ids, dtype=torch.bool)
     tool_mask[:, 2:4] = True
 
@@ -116,8 +116,8 @@ def test_model_uses_explicit_tool_mask_for_weighted_loss():
 def test_model_auto_generates_tool_mask_from_configured_token_ids():
     torch.manual_seed(0)
     config = tiny_config(tool_call_token_id=10, tool_call_span=2, tool_loss_weight=5.0)
-    model = ValkModelForCausalLM(config)
-    input_ids = torch.tensor([[4, 10, 11, 12, 13, 14]])
+    model = ValkModelForCausalLM(config).cuda()
+    input_ids = torch.tensor([[4, 10, 11, 12, 13, 14]], device="cuda")
 
     outputs = model(input_ids=input_ids, labels=input_ids)
     expected_mask = create_tool_mask(input_ids, tool_call_token_id=10, tool_call_span=2)
@@ -129,5 +129,5 @@ def test_model_auto_generates_tool_mask_from_configured_token_ids():
         ignore_index=-100,
     )
 
-    assert torch.equal(expected_mask, torch.tensor([[False, True, True, True, False, False]]))
+    assert torch.equal(expected_mask, torch.tensor([[False, True, True, True, False, False]], device="cuda"))
     assert torch.allclose(outputs.loss, expected)

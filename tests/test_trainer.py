@@ -39,8 +39,8 @@ def tiny_config(**overrides):
 
 
 def test_trainer_accepts_injected_dataloaders(tmp_path):
-    model = ValkModelForCausalLM(tiny_config())
-    args = TrainingArguments(num_training_steps=1, batch_size=2, checkpoint_dir=str(tmp_path), device="cpu")
+    model = ValkModelForCausalLM(tiny_config()).cuda()
+    args = TrainingArguments(num_training_steps=1, batch_size=2, checkpoint_dir=str(tmp_path), device="cuda")
     train_loader = DataLoader(TinyTokenDataset(), batch_size=2, collate_fn=lambda examples: {key: torch.stack([example[key] for example in examples]) for key in examples[0]})
 
     trainer = ValkTrainer(model=model, train_dataset=None, args=args, train_dataloader=train_loader)
@@ -50,8 +50,8 @@ def test_trainer_accepts_injected_dataloaders(tmp_path):
 
 
 def test_trainer_initializes_optimizer_groups_and_scheduler(tmp_path):
-    model = ValkModelForCausalLM(tiny_config())
-    args = TrainingArguments(num_training_steps=4, batch_size=2, warmup_steps=2, checkpoint_dir=str(tmp_path), device="cpu")
+    model = ValkModelForCausalLM(tiny_config()).cuda()
+    args = TrainingArguments(num_training_steps=4, batch_size=2, warmup_steps=2, checkpoint_dir=str(tmp_path), device="cuda")
     trainer = ValkTrainer(model=model, train_dataset=TinyTokenDataset(), args=args)
 
     assert len(trainer.optimizer.param_groups) == 2
@@ -61,14 +61,14 @@ def test_trainer_initializes_optimizer_groups_and_scheduler(tmp_path):
 
 
 def test_auxiliary_loss_warmup_schedules_reach_targets(tmp_path):
-    model = ValkModelForCausalLM(tiny_config(use_latent_state=True, use_jepa=True, latent_state_layers=[0], use_latent_branching=True, enable_unstable_latent_branching=True, latent_branching_layers=[0]))
+    model = ValkModelForCausalLM(tiny_config(use_latent_state=True, use_jepa=True, latent_state_layers=[0], use_latent_branching=True, enable_unstable_latent_branching=True, latent_branching_layers=[0])).cuda()
     args = TrainingArguments(
         num_training_steps=4,
         batch_size=2,
         jepa_warmup_steps=4,
         branch_warmup_steps=2,
         checkpoint_dir=str(tmp_path),
-        device="cpu",
+        device="cuda",
     )
     trainer = ValkTrainer(model=model, train_dataset=TinyTokenDataset(), args=args)
 
@@ -87,9 +87,9 @@ def test_auxiliary_loss_warmup_schedules_reach_targets(tmp_path):
 
 def test_trainer_runs_steps_logs_metrics_and_updates_parameters(tmp_path):
     torch.manual_seed(0)
-    model = ValkModelForCausalLM(tiny_config())
+    model = ValkModelForCausalLM(tiny_config()).cuda()
     before = model.lm_head.weight.detach().clone()
-    args = TrainingArguments(num_training_steps=2, batch_size=2, warmup_steps=1, log_steps=1, checkpoint_dir=str(tmp_path), device="cpu")
+    args = TrainingArguments(num_training_steps=2, batch_size=2, warmup_steps=1, log_steps=1, checkpoint_dir=str(tmp_path), device="cuda")
     trainer = ValkTrainer(model=model, train_dataset=TinyTokenDataset(), args=args)
 
     metrics = trainer.train()
@@ -101,8 +101,8 @@ def test_trainer_runs_steps_logs_metrics_and_updates_parameters(tmp_path):
 
 
 def test_trainer_clips_gradients_and_records_grad_norm(tmp_path):
-    model = ValkModelForCausalLM(tiny_config())
-    args = TrainingArguments(num_training_steps=1, batch_size=2, max_grad_norm=0.01, checkpoint_dir=str(tmp_path), device="cpu")
+    model = ValkModelForCausalLM(tiny_config()).cuda()
+    args = TrainingArguments(num_training_steps=1, batch_size=2, max_grad_norm=0.01, checkpoint_dir=str(tmp_path), device="cuda")
     trainer = ValkTrainer(model=model, train_dataset=TinyTokenDataset(), args=args)
 
     trainer.train()
@@ -115,9 +115,9 @@ def test_trainer_clips_gradients_and_records_grad_norm(tmp_path):
 def test_trainer_updates_jepa_target_encoder_after_optimizer_step(tmp_path):
     torch.manual_seed(0)
     config = tiny_config(use_latent_state=True, latent_state_layers=[0], use_jepa=True, jepa_hidden_dim=16)
-    model = ValkModelForCausalLM(config)
+    model = ValkModelForCausalLM(config).cuda()
     before = model.jepa_module.target_encoder.weight.detach().clone()
-    args = TrainingArguments(num_training_steps=1, batch_size=2, checkpoint_dir=str(tmp_path), device="cpu")
+    args = TrainingArguments(num_training_steps=1, batch_size=2, checkpoint_dir=str(tmp_path), device="cuda")
     trainer = ValkTrainer(model=model, train_dataset=TinyTokenDataset(), args=args)
 
     trainer.train()
@@ -127,8 +127,8 @@ def test_trainer_updates_jepa_target_encoder_after_optimizer_step(tmp_path):
 
 
 def test_trainer_evaluation_loop_returns_finite_metrics_and_restores_train_mode(tmp_path):
-    model = ValkModelForCausalLM(tiny_config())
-    args = TrainingArguments(num_training_steps=1, batch_size=2, checkpoint_dir=str(tmp_path), device="cpu")
+    model = ValkModelForCausalLM(tiny_config()).cuda()
+    args = TrainingArguments(num_training_steps=1, batch_size=2, checkpoint_dir=str(tmp_path), device="cuda")
     trainer = ValkTrainer(model=model, train_dataset=TinyTokenDataset(), eval_dataset=TinyTokenDataset(length=2), args=args)
 
     metrics = trainer.evaluate()
@@ -140,7 +140,7 @@ def test_trainer_evaluation_loop_returns_finite_metrics_and_restores_train_mode(
 
 def test_trainer_log_step_records_health_metrics_and_prints_on_log_boundary(tmp_path, capsys):
     model = ValkModelForCausalLM(tiny_config(use_latent_state=True, latent_state_layers=[0], use_jepa=True, use_latent_branching=True, enable_unstable_latent_branching=True, latent_branching_layers=[0]))
-    args = TrainingArguments(num_training_steps=1, batch_size=2, log_steps=1, checkpoint_dir=str(tmp_path), device="cpu", jepa_warmup_steps=0, branch_warmup_steps=0)
+    args = TrainingArguments(num_training_steps=1, batch_size=2, log_steps=1, checkpoint_dir=str(tmp_path), device="cuda", jepa_warmup_steps=0, branch_warmup_steps=0)
     trainer = ValkTrainer(model=model, train_dataset=TinyTokenDataset(), args=args)
     trainer.global_step = 1
     outputs = types.SimpleNamespace(
@@ -170,8 +170,8 @@ def test_trainer_log_step_records_health_metrics_and_prints_on_log_boundary(tmp_
 
 
 def test_trainer_checkpoint_save_and_resume_restores_step(tmp_path):
-    model = ValkModelForCausalLM(tiny_config())
-    args = TrainingArguments(num_training_steps=1, batch_size=2, save_steps=1, checkpoint_dir=str(tmp_path), device="cpu")
+    model = ValkModelForCausalLM(tiny_config()).cuda()
+    args = TrainingArguments(num_training_steps=1, batch_size=2, save_steps=1, checkpoint_dir=str(tmp_path), device="cuda")
     trainer = ValkTrainer(model=model, train_dataset=TinyTokenDataset(), args=args)
     trainer.train()
 

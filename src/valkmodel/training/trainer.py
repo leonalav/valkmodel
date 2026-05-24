@@ -80,7 +80,11 @@ class ValkTrainer:
         self.eval_dataset = eval_dataset
         self.args = TrainingArguments() if args is None else args
         torch.manual_seed(self.args.seed)
-        self.device = torch.device(self.args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+        if not torch.cuda.is_available():
+            raise RuntimeError("ValkTrainer requires CUDA because ValkModel only supports gdn_backend='fla'")
+        self.device = torch.device(self.args.device or "cuda")
+        if self.device.type != "cuda":
+            raise ValueError("ValkTrainer requires a CUDA device")
         self.model.to(self.device)
         self.dataloader_factory = dataloader_factory
         if train_dataloader is not None:

@@ -193,7 +193,7 @@ class TestDataloaderRouting:
             "--tokenizer-config", str(tokenizer_path),
             "--model-config", str(model_path),
             "--output-dir", str(tmp_path / "out"),
-            "--batch-size", "1", "--seq-len", "4", "--device", "cpu",
+            "--batch-size", "1", "--seq-len", "4", "--device", "cuda",
         ])
         build_trainer_from_args(args)
 
@@ -211,7 +211,7 @@ class TestDataloaderRouting:
             "--tokenizer-config", str(tokenizer_path),
             "--model-config", str(model_path),
             "--output-dir", str(tmp_path / "out"),
-            "--batch-size", "1", "--seq-len", "4", "--device", "cpu",
+            "--batch-size", "1", "--seq-len", "4", "--device", "cuda",
             "--no-use-streaming",
             "--packed-shard-root", "/data/shards",
         ])
@@ -286,13 +286,13 @@ class TestCurriculumDataloaderRebuild:
             intermediate_size=64, max_position_embeddings=256,
             use_short_conv=True, use_gate=False,
         )
-        model = ValkModelForCausalLM(config)
+        model = ValkModelForCausalLM(config).cuda()
         args = TrainingArguments(
             num_training_steps=steps_per_stage * len(stages),
             batch_size=1,
             checkpoint_dir=str(tmp_path / "ckpt"),
             log_dir=str(tmp_path / "logs"),
-            device="cpu",
+            device="cuda",
             use_curriculum=True,
             curriculum_stages=stages,
             curriculum_steps_per_stage=steps_per_stage,
@@ -312,12 +312,12 @@ class TestCurriculumDataloaderRebuild:
             intermediate_size=64, max_position_embeddings=256,
             use_short_conv=True, use_gate=False,
         )
-        model = ValkModelForCausalLM(config)
+        model = ValkModelForCausalLM(config).cuda()
         args = TrainingArguments(
             num_training_steps=1, batch_size=1,
             checkpoint_dir=str(tmp_path / "ckpt"),
             log_dir=str(tmp_path / "logs"),
-            device="cpu",
+            device="cuda",
         )
         factory_calls = []
 
@@ -351,13 +351,13 @@ class TestCurriculumDataloaderRebuild:
             intermediate_size=64, max_position_embeddings=256,
             use_short_conv=True, use_gate=False,
         )
-        model = ValkModelForCausalLM(config)
+        model = ValkModelForCausalLM(config).cuda()
         args = TrainingArguments(
             num_training_steps=steps_per_stage * len(stages),
             batch_size=1,
             checkpoint_dir=str(tmp_path / "ckpt"),
             log_dir=str(tmp_path / "logs"),
-            device="cpu",
+            device="cuda",
             use_curriculum=True,
             curriculum_stages=stages,
             curriculum_steps_per_stage=steps_per_stage,
@@ -403,13 +403,13 @@ class TestCurriculumDataloaderRebuild:
             intermediate_size=64, max_position_embeddings=256,
             use_short_conv=True, use_gate=False,
         )
-        model = ValkModelForCausalLM(config)
+        model = ValkModelForCausalLM(config).cuda()
         args = TrainingArguments(
             num_training_steps=steps_per_stage * len(stages),
             batch_size=1,
             checkpoint_dir=str(tmp_path / "ckpt"),
             log_dir=str(tmp_path / "logs"),
-            device="cpu",
+            device="cuda",
             use_curriculum=True,
             curriculum_stages=stages,
             curriculum_steps_per_stage=steps_per_stage,
@@ -461,7 +461,7 @@ class TestCurriculumDataloaderRebuild:
             "--tokenizer-config", str(tokenizer_path),
             "--model-config", str(model_path),
             "--output-dir", str(tmp_path / "out"),
-            "--batch-size", "1", "--seq-len", "4", "--device", "cpu",
+            "--batch-size", "1", "--seq-len", "4", "--device", "cuda",
         ])
         trainer = build_trainer_from_args(args)
 

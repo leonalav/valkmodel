@@ -69,11 +69,10 @@ class GatedDeltaNetLayer(nn.Module):
         if mode not in {"chunk", "fused_recurrent"}:
             raise ValueError("mode must be 'chunk' or 'fused_recurrent'")
         self.mode = mode
-        self.backend = "fla" if backend == "auto" else backend
+        self.backend = backend
         if self.backend != "fla":
             raise NotImplementedError(
-                "Only the FLA Gated DeltaNet backend is mathematically implemented in this layer. "
-                "The earlier naive backend option is not a faithful reference implementation."
+                "Only gdn_backend='fla' is supported. CPU fallback backends are intentionally unsupported."
             )
         self.hidden_size = hidden_size
         self.expand_v = expand_v
@@ -142,6 +141,8 @@ class GatedDeltaNetLayer(nn.Module):
                 "Padding would update the recurrent GDN state as real tokens; pass dense sequences "
                 "or implement reference-style unpadding/cu_seqlens first."
             )
+        if hidden_states.device.type != "cuda":
+            raise ValueError("FLA GatedDeltaNetLayer requires CUDA tensors")
         q, k, v = self._project_inputs(hidden_states)
         batch_size, seq_len, _ = hidden_states.shape
         q = F.normalize(q.view(batch_size, seq_len, self.num_heads, self.head_dim), dim=-1)

@@ -158,6 +158,6 @@ def test_latent_branching_can_be_enabled_only_with_explicit_switch():
         enable_unstable_latent_branching=True,
         latent_branching_layers=[0],
     )
-    model = ValkModelForCausalLM(config)
+    model = ValkModelForCausalLM(config).cuda()
 
     assert model.model.layers[0].latent_branching is not None

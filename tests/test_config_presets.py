@@ -29,6 +29,8 @@ def test_config_rejects_invalid_value_head_grouping():
 
 def test_config_rejects_invalid_gdn_backend():
     with pytest.raises(ValueError, match="gdn_backend"):
+        ValkModelConfig(gdn_backend="auto")
+    with pytest.raises(ValueError, match="gdn_backend"):
         ValkModelConfig(gdn_backend="unknown")
 
 

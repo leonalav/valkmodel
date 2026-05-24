@@ -15,7 +15,7 @@
   "vocab_size": 128256,
   "use_cache": true,
   "attn_mode": "chunk",
-  "gdn_backend": "auto",
+  "gdn_backend": "fla",
   "use_gate": true,
   "use_short_conv": true,
   "allow_neg_eigval": false,
